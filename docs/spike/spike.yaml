@@ -1,0 +1,125 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: srt-spike-script
+  namespace: testing
+data:
+  spike.sh: |
+    #!/usr/bin/env bash
+    # Feasibility spike: can @anthropic-ai/sandbox-runtime (bubblewrap) run at
+    # full strength inside this pod? Prints labelled results; nothing persists.
+    set -u
+    export DEBIAN_FRONTEND=noninteractive
+    echo "== identity"; id; echo "uid_map: $(cat /proc/self/uid_map | tr -s ' ')"
+    echo "proc overmounts: $(grep -c ' /proc/' /proc/self/mountinfo)"
+    echo "== caps"; grep -E 'CapBnd|CapEff' /proc/self/status
+    echo "== apparmor: $(cat /proc/self/attr/current 2>/dev/null || echo n/a)"
+    echo "== seccomp: $(grep Seccomp: /proc/self/status)"
+    echo "== apt"
+    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq bubblewrap socat ripgrep curl ca-certificates util-linux >/dev/null 2>&1 && echo APT_OK || echo APT_FAIL
+    bwrap --version
+    echo "== raw userns"; unshare -Ur true 2>&1 && echo UNSHARE_OK || echo UNSHARE_FAIL
+    echo "== raw bwrap fresh /proc (strict mode needs this)"
+    bwrap --unshare-all --proc /proc --dev /dev --ro-bind / / --tmpfs /tmp true 2>&1 && echo BWRAP_PROC_OK || echo BWRAP_PROC_FAIL
+    echo "== raw bwrap bind /proc (weak mode)"
+    bwrap --unshare-all --bind /proc /proc --dev /dev --ro-bind / / true 2>&1 && echo BWRAP_BINDPROC_OK || echo BWRAP_BINDPROC_FAIL
+    echo "== npm install srt"
+    npm install -g @anthropic-ai/sandbox-runtime@0.0.81 >/dev/null 2>&1 && echo NPM_OK || echo NPM_FAIL
+    srt --version 2>&1
+    mkdir -p /work/allowed /work/secret /tmp/u; echo TOPSECRET > /work/secret/key
+    cat > /work/strict.json <<'EOF'
+    {"network":{"allowedDomains":["api.anthropic.com"],"deniedDomains":[]},
+     "filesystem":{"denyRead":["/work/secret"],"allowWrite":["/work/allowed"],"denyWrite":[]}}
+    EOF
+    cat > /work/weak.json <<'EOF'
+    {"network":{"allowedDomains":["api.anthropic.com"],"deniedDomains":[]},
+     "filesystem":{"denyRead":["/work/secret"],"allowWrite":["/work/allowed"],"denyWrite":[]},
+     "enableWeakerNestedSandbox": true}
+    EOF
+    chown -R 1000:1000 /work /tmp/u
+    run_tests() {
+      local label=$1 cfg=$2
+      echo "== srt tests [$label] as $(id -un)"
+      if SRT_DEBUG=1 srt --settings "$cfg" -c 'echo SANDBOX_RAN' >/work/out-$label.log 2>/work/debug-$label.log; then echo "run: OK"; else echo "run: FAIL rc=$?"; tail -3 /work/debug-$label.log; fi
+      grep -iE 'warn|weaker|cannot disable|user namespace|seccomp|Operation not permitted' /work/debug-$label.log | head -4 | sed 's/^/   debug: /'
+      srt --settings "$cfg" -c 'cat /work/secret/key' >/dev/null 2>&1 && echo "denyRead:          LEAK" || echo "denyRead:          blocked"
+      srt --settings "$cfg" -c 'echo x > /work/allowed/f' 2>/dev/null && echo "allowWrite:        ok" || echo "allowWrite:        FAIL"
+      srt --settings "$cfg" -c 'echo x > /work/denied-f' 2>/dev/null && echo "write outside:     LEAK" || echo "write outside:     blocked"
+      printf "allowed domain:    http %s (expect non-000)\n" "$(srt --settings "$cfg" -c 'curl -s -m 15 -o /dev/null -w "%{http_code}" https://api.anthropic.com/' 2>/dev/null)"
+      printf "denied domain:     http %s (expect 403 or 000)\n" "$(srt --settings "$cfg" -c 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com/' 2>/dev/null)"
+      srt --settings "$cfg" -c 'unshare -Ur true' >/dev/null 2>&1 && echo "nested userns:     ALLOWED (escape path open)" || echo "nested userns:     blocked"
+      srt --settings "$cfg" -c 'ls /proc | grep -cE "^[0-9]+$"' 2>/dev/null | sed 's/^/visible pids:      /'
+    }
+    echo "### A. uid 0 (container root), strict"; run_tests root-strict /work/strict.json
+    echo "### B. uid 1000, strict"
+    setpriv --reuid=1000 --regid=1000 --clear-groups --inh-caps=-all env HOME=/tmp/u PATH="$PATH" bash -c "$(declare -f run_tests); run_tests user-strict /work/strict.json"
+    echo "### C. uid 1000, weak (enableWeakerNestedSandbox)"
+    setpriv --reuid=1000 --regid=1000 --clear-groups --inh-caps=-all env HOME=/tmp/u PATH="$PATH" bash -c "$(declare -f run_tests); run_tests user-weak /work/weak.json"
+    echo SPIKE_DONE
+---
+# Pod A: pod user namespace + unmasked /proc + no AppArmor/seccomp on the container.
+# Root inside the pod is an unprivileged host uid; bubblewrap can mount a fresh procfs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: srt-spike-userns
+  namespace: testing
+  labels: {app: srt-spike, variant: userns}
+spec:
+  restartPolicy: Never
+  hostUsers: false
+  securityContext:
+    seccompProfile: {type: Unconfined}
+    appArmorProfile: {type: Unconfined}
+  containers:
+    - name: spike
+      image: node:22-bookworm
+      command: ["bash", "/spike/spike.sh"]
+      securityContext:
+        procMount: Unmasked
+        allowPrivilegeEscalation: false
+        privileged: false
+      resources:
+        requests: {cpu: "500m", memory: "512Mi"}
+        limits: {cpu: "2", memory: "2Gi"}
+      volumeMounts:
+        - {name: script, mountPath: /spike}
+        - {name: work, mountPath: /work}
+  volumes:
+    - name: script
+      configMap: {name: srt-spike-script, defaultMode: 0755}
+    - name: work
+      emptyDir: {}
+---
+# Pod B: the same, but an ordinary (host-uid) pod with the runtime's masked /proc.
+# Expected: strict bubblewrap fails on the fresh /proc mount; weak mode works.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: srt-spike-plain
+  namespace: testing
+  labels: {app: srt-spike, variant: plain}
+spec:
+  restartPolicy: Never
+  securityContext:
+    seccompProfile: {type: Unconfined}
+    appArmorProfile: {type: Unconfined}
+  containers:
+    - name: spike
+      image: node:22-bookworm
+      command: ["bash", "/spike/spike.sh"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        privileged: false
+      resources:
+        requests: {cpu: "500m", memory: "512Mi"}
+        limits: {cpu: "2", memory: "2Gi"}
+      volumeMounts:
+        - {name: script, mountPath: /spike}
+        - {name: work, mountPath: /work}
+  volumes:
+    - name: script
+      configMap: {name: srt-spike-script, defaultMode: 0755}
+    - name: work
+      emptyDir: {}

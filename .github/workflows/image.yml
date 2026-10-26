@@ -1,0 +1,59 @@
+name: claude-sandbox image
+
+# Builds images/claude-sandbox and pushes ghcr.io/<owner>/claude-sandbox:sha-<short> (plus a
+# moving `main` tag). The ArgoCD entry pins `image.tag: sha-<short>` (ADR-0011).
+on:
+  push:
+    branches: [main]
+    paths:
+      - images/claude-sandbox/**
+      - .github/workflows/claude-sandbox-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/claude-sandbox
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=main
+          labels: |
+            org.opencontainers.image.title=claude-sandbox
+            org.opencontainers.image.description=Anthropic sandbox-runtime wrapping Claude Code (Remote Control) or the Managed Agents worker
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: images/claude-sandbox
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### claude-sandbox image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Set \`image.tag\` for the claude-sandbox Application to the sha- tag above." >> "$GITHUB_STEP_SUMMARY"

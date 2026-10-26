@@ -1,0 +1,33 @@
+{{- range $sb := .Values.sandboxes }}
+{{- if $sb.enabled }}
+{{- $ctx := dict "root" $ "sb" $sb }}
+{{- $name := include "claude-sandbox.sb.fullname" $ctx }}
+{{- range $vol := list "workspace" "home" }}
+{{- $spec := index $sb.persistence $vol }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-{{ $vol }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "claude-sandbox.labels" $ | nindent 4 }}
+    claude-sandbox/name: {{ $sb.name }}
+    claude-sandbox/volume: {{ $vol }}
+  {{- if $sb.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  # ReadWriteOnce on a local-path volume: the sandbox is pinned to one node, which also means
+  # the volume supports the idmapped mount a user-namespace pod needs (ADR-0008).
+  accessModes: [ReadWriteOnce]
+  {{- with $spec.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $spec.size }}
+{{- end }}
+{{- end }}
+{{- end }}

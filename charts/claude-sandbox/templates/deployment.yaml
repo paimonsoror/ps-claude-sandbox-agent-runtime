@@ -1,0 +1,194 @@
+{{- range $sb := .Values.sandboxes }}
+{{- if $sb.enabled }}
+{{- $ctx := dict "root" $ "sb" $sb }}
+{{- $name := include "claude-sandbox.sb.fullname" $ctx }}
+{{- $iso := $.Values.isolation }}
+{{- $strict := eq $iso.mode "strict" }}
+{{- $isWorkspace := eq $sb.kind "workspace" }}
+{{- $isWorker := eq $sb.kind "managed-agents-worker" }}
+{{- if not (or $isWorkspace $isWorker) }}
+{{- fail (printf "sandbox %q: unsupported kind %q (workspace | managed-agents-worker)" $sb.name $sb.kind) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "claude-sandbox.labels" $ | nindent 4 }}
+    claude-sandbox/name: {{ $sb.name }}
+    claude-sandbox/kind: {{ $sb.kind }}
+spec:
+  replicas: 1
+  # One pod per sandbox: the volumes are ReadWriteOnce and Remote Control serves one server
+  # per Claude home.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "claude-sandbox.sb.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "claude-sandbox.sb.selectorLabels" $ctx | nindent 8 }}
+      annotations:
+        checksum/config: {{ include "claude-sandbox.sb.srtSettings" $ctx | sha256sum }}
+    spec:
+      {{- if $strict }}
+      # Pod user namespace: container uid 0 is an unprivileged host uid (ADR-0003).
+      hostUsers: false
+      {{- end }}
+      {{- with $iso.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      serviceAccountName: {{ include "claude-sandbox.serviceAccountName" $ }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: {{ $iso.runAsUser }}
+        runAsGroup: {{ $iso.runAsGroup }}
+        fsGroup: {{ $iso.fsGroup }}
+        runAsNonRoot: true
+        # bubblewrap needs mount(2) and unshare(2) with namespace flags, which the runtime's
+        # default AppArmor and seccomp profiles deny. srt applies its own seccomp filter to the
+        # command it runs (ADR-0003).
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sandbox
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- if $isWorkspace }}
+          # A TTY for the one-time Remote Control confirmation (kubectl attach) and for the
+          # server's status display (ADR-0009).
+          tty: true
+          stdin: true
+          {{- end }}
+          securityContext:
+            {{- if $strict }}
+            # No masked /proc paths, so bubblewrap can mount a fresh procfs. Only valid with
+            # hostUsers: false.
+            procMount: Unmasked
+            {{- end }}
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: {{ $iso.readOnlyRootFilesystem }}
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: SANDBOX_KIND
+              value: {{ $sb.kind | quote }}
+            - name: SANDBOX_NAME
+              value: {{ $sb.name | quote }}
+            - name: SANDBOX_WRAP
+              value: {{ ternary "srt" $iso.wrap $isWorker | quote }}
+            - name: SRT_SETTINGS
+              value: /etc/srt/settings.json
+            - name: HOME
+              value: /home/agent
+            - name: CLAUDE_CODE_TMPDIR
+              value: /tmp/claude
+            {{- if $.Values.debug.srt }}
+            - name: SRT_DEBUG
+              value: "1"
+            {{- end }}
+            {{- if $isWorkspace }}
+            {{- with $sb.repo }}
+            - name: WORKSPACE_REPO
+              value: {{ . | quote }}
+            {{- end }}
+            - name: RC_SPAWN
+              value: {{ $sb.remoteControl.spawn | default "same-dir" | quote }}
+            - name: RC_CAPACITY
+              value: {{ $sb.remoteControl.capacity | default 8 | quote }}
+            - name: RC_PERMISSION_MODE
+              value: {{ $sb.remoteControl.permissionMode | default "default" | quote }}
+            - name: RC_NAME_PREFIX
+              value: {{ $sb.remoteControl.namePrefix | default $sb.name | quote }}
+            - name: RC_VERBOSE
+              value: {{ $.Values.debug.verbose | quote }}
+            {{- with $sb.github }}
+            {{- if .existingSecret }}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .key | default "token" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if $isWorker }}
+            - name: ANT_MAX_IDLE
+              value: {{ $sb.maxIdle | default "60s" | quote }}
+            - name: ANT_LOG_FORMAT
+              value: {{ $sb.logFormat | default "json" | quote }}
+            {{- end }}
+            {{- with $sb.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if $isWorker }}
+          envFrom:
+            - secretRef:
+                name: {{ $sb.environment.existingSecret }}
+          {{- end }}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/srt
+              readOnly: true
+            {{- if $isWorkspace }}
+            - name: config
+              mountPath: /etc/claude-code
+              readOnly: true
+            {{- end }}
+            {{- if $isWorker }}
+            - name: memory
+              mountPath: /mnt/memory
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                {{- if $isWorkspace }}
+                # Either the server is up or the entrypoint is still waiting for the login.
+                - pgrep -f "claude remote-control" >/dev/null || pgrep -f sandbox-entrypoint >/dev/null
+                {{- else }}
+                - pgrep -f "ant beta:worker" >/dev/null
+                {{- end }}
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5
+          resources:
+            {{- toYaml $sb.resources | nindent 12 }}
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ $name }}-workspace
+        - name: home
+          persistentVolumeClaim:
+            claimName: {{ $name }}-home
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: config
+          configMap:
+            name: {{ $name }}
+            defaultMode: 0444
+        {{- if $isWorker }}
+        - name: memory
+          emptyDir:
+            sizeLimit: 1Gi
+        {{- end }}
+{{- end }}
+{{- end }}

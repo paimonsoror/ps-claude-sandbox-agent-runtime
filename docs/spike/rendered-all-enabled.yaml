@@ -1,0 +1,603 @@
+---
+# Source: claude-sandbox/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cs-claude-sandbox
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+# Sandboxes never talk to the Kubernetes API (ADR-0007).
+automountServiceAccountToken: false
+---
+# Source: claude-sandbox/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cs-claude-sandbox-homelab
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: homelab
+data:
+  # srt policy: proxy allowlist, write-allow roots, read denies. Mounted read-only at /etc/srt.
+  settings.json: |-
+    {
+      "allowNestedUserNamespaces": false,
+      "filesystem": {
+        "allowWrite": [
+          "/workspace",
+          "/home/agent",
+          "/tmp"
+        ],
+        "denyRead": [
+          "/etc/srt",
+          "/etc/claude-code"
+        ],
+        "denyWrite": []
+      },
+      "network": {
+        "allowedDomains": [
+          "api.anthropic.com",
+          "claude.ai",
+          "claude.com",
+          "platform.claude.com",
+          "sso.claude.com",
+          "github.com",
+          "*.github.com"
+        ],
+        "deniedDomains": [],
+        "deniedResolvedAddresses": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "100.64.0.0/10"
+        ],
+        "strictAllowlist": true
+      }
+    }
+  # Claude Code managed settings, highest precedence (mounted at /etc/claude-code).
+  managed-settings.json: |-
+    {
+      "env": {
+        "DISABLE_TELEMETRY": "1",
+        "DISABLE_UPDATES": "1"
+      },
+      "forceLoginMethod": "claudeai",
+      "permissions": {
+        "disableBypassPermissionsMode": "disable"
+      },
+      "sandbox": {
+        "enabled": false
+      }
+    }
+---
+# Source: claude-sandbox/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cs-claude-sandbox-worker
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: worker
+data:
+  # srt policy: proxy allowlist, write-allow roots, read denies. Mounted read-only at /etc/srt.
+  settings.json: |-
+    {
+      "allowNestedUserNamespaces": false,
+      "filesystem": {
+        "allowWrite": [
+          "/workspace",
+          "/home/agent",
+          "/tmp",
+          "/mnt/memory"
+        ],
+        "denyRead": [
+          "/etc/srt",
+          "/etc/claude-code"
+        ],
+        "denyWrite": []
+      },
+      "network": {
+        "allowedDomains": [
+          "api.anthropic.com"
+        ],
+        "deniedDomains": [],
+        "deniedResolvedAddresses": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "100.64.0.0/10"
+        ],
+        "strictAllowlist": true
+      }
+    }
+---
+# Source: claude-sandbox/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cs-claude-sandbox-homelab-workspace
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: homelab
+    claude-sandbox/volume: workspace
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  # ReadWriteOnce on a local-path volume: the sandbox is pinned to one node, which also means
+  # the volume supports the idmapped mount a user-namespace pod needs (ADR-0008).
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Source: claude-sandbox/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cs-claude-sandbox-homelab-home
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: homelab
+    claude-sandbox/volume: home
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  # ReadWriteOnce on a local-path volume: the sandbox is pinned to one node, which also means
+  # the volume supports the idmapped mount a user-namespace pod needs (ADR-0008).
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+# Source: claude-sandbox/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cs-claude-sandbox-worker-workspace
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: worker
+    claude-sandbox/volume: workspace
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  # ReadWriteOnce on a local-path volume: the sandbox is pinned to one node, which also means
+  # the volume supports the idmapped mount a user-namespace pod needs (ADR-0008).
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Source: claude-sandbox/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cs-claude-sandbox-worker-home
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: worker
+    claude-sandbox/volume: home
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  # ReadWriteOnce on a local-path volume: the sandbox is pinned to one node, which also means
+  # the volume supports the idmapped mount a user-namespace pod needs (ADR-0008).
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Source: claude-sandbox/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cs-claude-sandbox-homelab
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: homelab
+    claude-sandbox/kind: workspace
+spec:
+  replicas: 1
+  # One pod per sandbox: the volumes are ReadWriteOnce and Remote Control serves one server
+  # per Claude home.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: claude-sandbox
+      app.kubernetes.io/instance: cs
+      claude-sandbox/name: homelab
+      claude-sandbox/kind: workspace
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: claude-sandbox
+        app.kubernetes.io/instance: cs
+        claude-sandbox/name: homelab
+        claude-sandbox/kind: workspace
+      annotations:
+        checksum/config: 335c954642aa9f77be734572752726e7503283c69e4d19ddd8cb69e26d844e66
+    spec:
+      # Pod user namespace: container uid 0 is an unprivileged host uid (ADR-0003).
+      hostUsers: false
+      serviceAccountName: cs-claude-sandbox
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        # bubblewrap needs mount(2) and unshare(2) with namespace flags, which the runtime's
+        # default AppArmor and seccomp profiles deny. srt applies its own seccomp filter to the
+        # command it runs (ADR-0003).
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sandbox
+          image: "ghcr.io/paimonsoror/claude-sandbox:sha-test"
+          imagePullPolicy: IfNotPresent
+          # A TTY for the one-time Remote Control confirmation (kubectl attach) and for the
+          # server's status display (ADR-0009).
+          tty: true
+          stdin: true
+          securityContext:
+            # No masked /proc paths, so bubblewrap can mount a fresh procfs. Only valid with
+            # hostUsers: false.
+            procMount: Unmasked
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: SANDBOX_KIND
+              value: "workspace"
+            - name: SANDBOX_NAME
+              value: "homelab"
+            - name: SANDBOX_WRAP
+              value: "srt"
+            - name: SRT_SETTINGS
+              value: /etc/srt/settings.json
+            - name: HOME
+              value: /home/agent
+            - name: CLAUDE_CODE_TMPDIR
+              value: /tmp/claude
+            - name: WORKSPACE_REPO
+              value: "https://github.com/paimonsoror/homelab-charts.git"
+            - name: RC_SPAWN
+              value: "worktree"
+            - name: RC_CAPACITY
+              value: "8"
+            - name: RC_PERMISSION_MODE
+              value: "default"
+            - name: RC_NAME_PREFIX
+              value: "homelab"
+            - name: RC_VERBOSE
+              value: "false"
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: claude-sandbox-github
+                  key: token
+                  optional: true
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/srt
+              readOnly: true
+            - name: config
+              mountPath: /etc/claude-code
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                # Either the server is up or the entrypoint is still waiting for the login.
+                - pgrep -f "claude remote-control" >/dev/null || pgrep -f sandbox-entrypoint >/dev/null
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5
+          resources:
+            limits:
+              cpu: "4"
+              memory: 6Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: cs-claude-sandbox-homelab-workspace
+        - name: home
+          persistentVolumeClaim:
+            claimName: cs-claude-sandbox-homelab-home
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: config
+          configMap:
+            name: cs-claude-sandbox-homelab
+            defaultMode: 0444
+---
+# Source: claude-sandbox/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cs-claude-sandbox-worker
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: worker
+    claude-sandbox/kind: managed-agents-worker
+spec:
+  replicas: 1
+  # One pod per sandbox: the volumes are ReadWriteOnce and Remote Control serves one server
+  # per Claude home.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: claude-sandbox
+      app.kubernetes.io/instance: cs
+      claude-sandbox/name: worker
+      claude-sandbox/kind: managed-agents-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: claude-sandbox
+        app.kubernetes.io/instance: cs
+        claude-sandbox/name: worker
+        claude-sandbox/kind: managed-agents-worker
+      annotations:
+        checksum/config: f0ff1418d486e648b04b54ecb4428fce22762f872d9c66718222fc25c836c0ce
+    spec:
+      # Pod user namespace: container uid 0 is an unprivileged host uid (ADR-0003).
+      hostUsers: false
+      serviceAccountName: cs-claude-sandbox
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        # bubblewrap needs mount(2) and unshare(2) with namespace flags, which the runtime's
+        # default AppArmor and seccomp profiles deny. srt applies its own seccomp filter to the
+        # command it runs (ADR-0003).
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sandbox
+          image: "ghcr.io/paimonsoror/claude-sandbox:sha-test"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            # No masked /proc paths, so bubblewrap can mount a fresh procfs. Only valid with
+            # hostUsers: false.
+            procMount: Unmasked
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: SANDBOX_KIND
+              value: "managed-agents-worker"
+            - name: SANDBOX_NAME
+              value: "worker"
+            - name: SANDBOX_WRAP
+              value: "srt"
+            - name: SRT_SETTINGS
+              value: /etc/srt/settings.json
+            - name: HOME
+              value: /home/agent
+            - name: CLAUDE_CODE_TMPDIR
+              value: /tmp/claude
+            - name: ANT_MAX_IDLE
+              value: "60s"
+            - name: ANT_LOG_FORMAT
+              value: "json"
+          envFrom:
+            - secretRef:
+                name: claude-sandbox-managed-agents
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/srt
+              readOnly: true
+            - name: memory
+              mountPath: /mnt/memory
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f "ant beta:worker" >/dev/null
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: cs-claude-sandbox-worker-workspace
+        - name: home
+          persistentVolumeClaim:
+            claimName: cs-claude-sandbox-worker-home
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: config
+          configMap:
+            name: cs-claude-sandbox-worker
+            defaultMode: 0444
+        - name: memory
+          emptyDir:
+            sizeLimit: 1Gi
+---
+# Source: claude-sandbox/templates/networkpolicy.yaml
+# Backstop for srt's proxy allowlist: the pod (including anything outside bubblewrap) may only
+# resolve names at the cluster DNS and open TCP/443 to the allowlisted names. No ingress, no
+# cluster-internal or LAN destinations (ADR-0006).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cs-claude-sandbox-homelab
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: homelab
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: claude-sandbox
+      app.kubernetes.io/instance: cs
+      claude-sandbox/name: homelab
+      claude-sandbox/kind: workspace
+  # An empty ingress rule turns on ingress enforcement and allows nothing.
+  ingress:
+    - {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: "kube-dns"
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: telltaledns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: "api.anthropic.com"
+        - matchName: "claude.ai"
+        - matchName: "claude.com"
+        - matchName: "platform.claude.com"
+        - matchName: "sso.claude.com"
+        - matchName: "github.com"
+        - matchPattern: "*.github.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Source: claude-sandbox/templates/networkpolicy.yaml
+# Backstop for srt's proxy allowlist: the pod (including anything outside bubblewrap) may only
+# resolve names at the cluster DNS and open TCP/443 to the allowlisted names. No ingress, no
+# cluster-internal or LAN destinations (ADR-0006).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cs-claude-sandbox-worker
+  namespace: claude-sandbox
+  labels:
+    helm.sh/chart: claude-sandbox-0.1.0
+    app.kubernetes.io/name: claude-sandbox
+    app.kubernetes.io/instance: cs
+    app.kubernetes.io/version: "0.0.81"
+    app.kubernetes.io/managed-by: Helm
+    claude-sandbox/name: worker
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: claude-sandbox
+      app.kubernetes.io/instance: cs
+      claude-sandbox/name: worker
+      claude-sandbox/kind: managed-agents-worker
+  # An empty ingress rule turns on ingress enforcement and allows nothing.
+  ingress:
+    - {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: "kube-dns"
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: telltaledns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: "api.anthropic.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

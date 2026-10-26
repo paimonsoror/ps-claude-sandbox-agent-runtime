@@ -1,0 +1,115 @@
+{{/*
+Chart-wide names and labels.
+*/}}
+{{- define "claude-sandbox.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "claude-sandbox.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "claude-sandbox.labels" -}}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+app.kubernetes.io/name: {{ include "claude-sandbox.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{- define "claude-sandbox.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- default (include "claude-sandbox.fullname" .) .Values.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Per-sandbox helpers. Each takes a dict with keys `root` (the top-level context) and `sb`
+(one entry of .Values.sandboxes).
+*/}}
+{{- define "claude-sandbox.sb.fullname" -}}
+{{- printf "%s-%s" (include "claude-sandbox.fullname" .root) .sb.name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "claude-sandbox.sb.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "claude-sandbox.name" .root }}
+app.kubernetes.io/instance: {{ .root.Release.Name }}
+claude-sandbox/name: {{ .sb.name }}
+claude-sandbox/kind: {{ .sb.kind }}
+{{- end -}}
+
+{{/* The union of the base and per-sandbox allowlists, in srt grammar. */}}
+{{- define "claude-sandbox.sb.domains" -}}
+{{- $all := concat (.root.Values.network.baseAllowedDomains | default list) (.sb.allowedDomains | default list) | uniq -}}
+{{- toJson $all -}}
+{{- end -}}
+
+{{/*
+srt settings for one sandbox (same schema as ~/.srt-settings.json). Rendered as JSON.
+*/}}
+{{- define "claude-sandbox.sb.srtSettings" -}}
+{{- $root := .root -}}
+{{- $sb := .sb -}}
+{{- $domains := include "claude-sandbox.sb.domains" . | fromJsonArray -}}
+{{- $allowWrite := list "/workspace" "/home/agent" "/tmp" -}}
+{{- if eq $sb.kind "managed-agents-worker" -}}
+{{- $allowWrite = append $allowWrite "/mnt/memory" -}}
+{{- end -}}
+{{- $settings := dict
+      "network" (dict
+        "allowedDomains" $domains
+        "deniedDomains" (list)
+        "strictAllowlist" true
+        "deniedResolvedAddresses" ($root.Values.network.deniedResolvedAddresses | default list))
+      "filesystem" (dict
+        "allowWrite" $allowWrite
+        "denyWrite" (list)
+        "denyRead" (list "/etc/srt" "/etc/claude-code"))
+      "allowNestedUserNamespaces" false
+-}}
+{{- if eq $root.Values.isolation.mode "weak" -}}
+{{- $_ := set $settings "enableWeakerNestedSandbox" true -}}
+{{- end -}}
+{{- $settings = mustMergeOverwrite $settings (deepCopy ($root.Values.srt.extraSettings | default dict)) -}}
+{{- toPrettyJson $settings -}}
+{{- end -}}
+
+{{/*
+Claude Code managed settings for a workspace sandbox (/etc/claude-code/managed-settings.json).
+*/}}
+{{- define "claude-sandbox.sb.managedSettings" -}}
+{{- $root := .root -}}
+{{- $sb := .sb -}}
+{{- $domains := include "claude-sandbox.sb.domains" . | fromJsonArray -}}
+{{- $sandbox := dict "enabled" false -}}
+{{- if eq $root.Values.isolation.wrap "claude-bash-sandbox" -}}
+{{- $sandbox = dict
+      "enabled" true
+      "failIfUnavailable" true
+      "allowUnsandboxedCommands" false
+      "autoAllowBashIfSandboxed" true
+      "network" (dict "allowedDomains" $domains "strictAllowlist" true) -}}
+{{- if eq $root.Values.isolation.mode "weak" -}}
+{{- $_ := set $sandbox "enableWeakerNestedSandbox" true -}}
+{{- end -}}
+{{- end -}}
+{{- $settings := dict
+      "sandbox" $sandbox
+      "permissions" (dict "disableBypassPermissionsMode" "disable")
+      "forceLoginMethod" "claudeai"
+      "env" (dict "DISABLE_UPDATES" "1" "DISABLE_TELEMETRY" "1")
+-}}
+{{- $settings = mustMergeOverwrite $settings (deepCopy ($root.Values.claude.managedSettings | default dict)) -}}
+{{- toPrettyJson $settings -}}
+{{- end -}}

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: claude-sandbox
+description: >-
+  Sandboxed execution environments for Claude agents, built on Anthropic's sandbox-runtime
+  (bubblewrap) inside pod user namespaces. Renders Claude Code workspaces (Remote Control) and
+  Managed Agents self-hosted workers. Design records: https://github.com/paimonsoror/ps-claude-sandbox-agent-runtime
+type: application
+version: 0.1.0
+# The image tag is pinned per deployment (sha-<short>); appVersion names the sandbox-runtime
+# release the image was built against.
+appVersion: "0.0.81"
+keywords: [claude, sandbox, agents, bubblewrap]
+sources:
+  - https://github.com/anthropics/sandbox-runtime
+  - https://github.com/paimonsoror/homelab-charts

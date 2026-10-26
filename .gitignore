@@ -1,0 +1,5 @@
+*.tgz
+/tmp/
+.DS_Store
+# scratch renders
+/charts/**/rendered-*.yaml

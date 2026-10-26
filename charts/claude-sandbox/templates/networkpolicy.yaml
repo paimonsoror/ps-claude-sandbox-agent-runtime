@@ -1,0 +1,110 @@
+{{- $pol := .Values.network.policy }}
+{{- if $pol.enabled }}
+{{- range $sb := .Values.sandboxes }}
+{{- if $sb.enabled }}
+{{- $ctx := dict "root" $ "sb" $sb }}
+{{- $name := include "claude-sandbox.sb.fullname" $ctx }}
+{{- $domains := include "claude-sandbox.sb.domains" $ctx | fromJsonArray }}
+{{- if eq $pol.engine "cilium" }}
+---
+# Backstop for srt's proxy allowlist: the pod (including anything outside bubblewrap) may only
+# resolve names at the cluster DNS and open TCP/443 to the allowlisted names. No ingress, no
+# cluster-internal or LAN destinations (ADR-0006).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "claude-sandbox.labels" $ | nindent 4 }}
+    claude-sandbox/name: {{ $sb.name }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "claude-sandbox.sb.selectorLabels" $ctx | nindent 6 }}
+  # An empty ingress rule turns on ingress enforcement and allows nothing.
+  ingress:
+    - {}
+  egress:
+    - toEndpoints:
+        {{- range $ep := $pol.dns.endpoints }}
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $ep.namespace }}
+            {{- range $k, $v := $ep.labels }}
+            k8s:{{ $k }}: {{ $v | quote }}
+            {{- end }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        {{- range $d := $domains }}
+        {{- $host := regexReplaceAll ":[0-9]+$" $d "" }}
+        {{- if hasPrefix "*" $host }}
+        - matchPattern: {{ $host | quote }}
+        {{- else }}
+        - matchName: {{ $host | quote }}
+        {{- end }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- with $pol.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- else if eq $pol.engine "kubernetes" }}
+---
+# Portable fallback: DNS to the cluster, TCP/443 to public ranges only. Name filtering is then
+# srt's proxy alone.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "claude-sandbox.labels" $ | nindent 4 }}
+    claude-sandbox/name: {{ $sb.name }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "claude-sandbox.sb.selectorLabels" $ctx | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    {{- range $ep := $pol.dns.endpoints }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ep.namespace }}
+          {{- with $ep.labels }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

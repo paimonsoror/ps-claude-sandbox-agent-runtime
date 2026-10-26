@@ -1,0 +1,166 @@
+# claude-sandbox: sandboxed execution environments for Claude agents.
+# Each entry in `sandboxes` becomes one pod with its own volumes, srt policy and network policy.
+# Decisions behind every default: https://github.com/paimonsoror/ps-claude-sandbox-agent-runtime/tree/main/docs/adr
+
+image:
+  repository: ghcr.io/paimonsoror/claude-sandbox
+  # Pinned per deployment to the sha-<short> tag the image workflow prints. Empty = appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+isolation:
+  # strict: pod user namespace (hostUsers: false) + procMount Unmasked, srt in full-strength
+  #         bubblewrap mode (ADR-0003). Needs Kubernetes >= 1.33 with user namespaces on,
+  #         containerd >= 2.0, kernel >= 6.3, and a volume type that supports idmapped mounts.
+  # weak:   ordinary pod; srt runs with enableWeakerNestedSandbox (bind-mounts the container's
+  #         /proc). Only for clusters without user namespaces, ideally with a sandboxed
+  #         RuntimeClass (see runtimeClassName).
+  mode: strict
+  # srt: the whole process (Claude Code or ant) runs inside srt (ADR-0005).
+  # claude-bash-sandbox: no srt wrap; Claude Code's own per-command Bash sandbox is turned on
+  #         instead (workspace kind only; the worker is always wrapped by srt).
+  wrap: srt
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  readOnlyRootFilesystem: true
+  # Set on clusters that offer gVisor/Kata (e.g. "gvisor"); combine with mode: weak.
+  runtimeClassName: ""
+
+network:
+  # Names every sandbox may reach. Rendered into BOTH srt's proxy allowlist and the per-pod
+  # network policy (ADR-0006). srt grammar: "host", "*.suffix", "host:port".
+  baseAllowedDomains:
+    - api.anthropic.com
+  # srt refuses to dial an allowed name that resolves into these ranges (keeps a wildcard
+  # entry from being aimed at the LAN or the cluster).
+  deniedResolvedAddresses:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 100.64.0.0/10
+  policy:
+    enabled: true
+    # cilium: CiliumNetworkPolicy with toFQDNs (needs Cilium's DNS proxy).
+    # kubernetes: NetworkPolicy allowing DNS + 443 to non-private ranges (portable fallback).
+    # none: no policy object.
+    engine: cilium
+    dns:
+      # Endpoints the pods may send DNS to. Both the cluster's CoreDNS and TelltaleDNS are
+      # listed because the kubelet's cluster-dns points at the latter on this cluster.
+      endpoints:
+        - namespace: kube-system
+          labels:
+            k8s-app: kube-dns
+        - namespace: telltaledns
+          labels: {}
+    # Extra Cilium egress rules appended to every sandbox's policy (e.g. an in-cluster registry).
+    extraEgress: []
+
+debug:
+  # SRT_DEBUG=1: srt prints every proxy decision and filesystem denial to stderr (chatty, and
+  # it logs the commands being run). Off by default (ADR-0012).
+  srt: false
+  # `claude remote-control --verbose`
+  verbose: false
+
+# Merged over the chart's srt settings for every sandbox (same schema as ~/.srt-settings.json).
+srt:
+  extraSettings: {}
+
+# Merged over the chart's Claude Code managed settings (/etc/claude-code/managed-settings.json).
+claude:
+  managedSettings: {}
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Optional: pull the worker's environment key from Vault through External Secrets Operator.
+externalSecrets:
+  enabled: false
+  secretStoreRef:
+    name: courier-vault
+    kind: SecretStore
+  refreshInterval: 1h
+
+sandboxes:
+  # A Claude Code workspace driven over Remote Control (ADR-0004, ADR-0009).
+  - name: homelab
+    kind: workspace
+    enabled: true
+    # Cloned into the empty /workspace volume on first start. Leave empty to start blank.
+    repo: ""
+    # Added to network.baseAllowedDomains for this sandbox.
+    allowedDomains:
+      - claude.ai
+      - claude.com
+      - platform.claude.com
+      - sso.claude.com
+      - code.claude.com
+      - github.com
+      - "*.github.com"
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - "*.npmjs.org"
+      - pypi.org
+      - files.pythonhosted.org
+    remoteControl:
+      # same-dir | worktree (worktree needs /workspace to be a git repository)
+      spawn: same-dir
+      capacity: 8
+      # default | acceptEdits | plan | auto (bypassPermissions is disabled by managed settings)
+      permissionMode: default
+      # Prefix of auto-generated session names; defaults to the sandbox name.
+      namePrefix: ""
+    github:
+      # Secret with a fine-grained PAT; optional, so the pod starts without it.
+      existingSecret: claude-sandbox-github
+      key: token
+    env: []
+    persistence:
+      workspace:
+        size: 20Gi
+        storageClass: ""
+      home:
+        size: 2Gi
+        storageClass: ""
+      # Keep the PVCs when the sandbox entry is removed (helm.sh/resource-policy: keep).
+      keep: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 6Gi
+
+  # An Anthropic Managed Agents self-hosted environment worker (ADR-0004, ADR-0010).
+  - name: worker
+    kind: managed-agents-worker
+    enabled: false
+    allowedDomains: []
+    environment:
+      # Secret with keys ANTHROPIC_ENVIRONMENT_ID and ANTHROPIC_ENVIRONMENT_KEY, created out
+      # of git (or by the ExternalSecret below when externalSecrets.enabled).
+      existingSecret: claude-sandbox-managed-agents
+      # Vault KV path for the ExternalSecret (ignored unless externalSecrets.enabled).
+      vaultPath: claude-sandbox/managed-agents
+    maxIdle: 60s
+    logFormat: json
+    env: []
+    persistence:
+      workspace:
+        size: 10Gi
+        storageClass: ""
+      home:
+        size: 1Gi
+        storageClass: ""
+      keep: true
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 4Gi

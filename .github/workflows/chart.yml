@@ -1,0 +1,58 @@
+name: chart
+
+# Every push: lint and render the chart with each ci/*-values.yaml.
+# Tag chart-v<version>: package and push oci://ghcr.io/<owner>/charts/claude-sandbox:<version>
+# (the registry the homelab app-of-apps already trusts; ADR-0014).
+on:
+  push:
+    branches: [main]
+    tags: ["chart-v*"]
+    paths:
+      - charts/**
+      - .github/workflows/chart.yml
+  pull_request:
+    paths:
+      - charts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint
+        run: helm lint charts/claude-sandbox
+      - name: Render every ci values file
+        run: |
+          set -e
+          for f in charts/claude-sandbox/ci/*-values.yaml; do
+            echo "== $f"
+            helm template cs charts/claude-sandbox -n claude-sandbox -f "$f" > /tmp/out.yaml
+            grep -c '^kind:' /tmp/out.yaml
+          done
+      - name: Render with defaults
+        run: helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test > /dev/null
+
+  publish:
+    needs: lint
+    if: startsWith(github.ref, 'refs/tags/chart-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Check the tag matches Chart.yaml
+        run: |
+          v="$(sed -n 's/^version: *//p' charts/claude-sandbox/Chart.yaml)"
+          [ "chart-v${v}" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != chart-v${v}"; exit 1; }
+      - name: Login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Package and push
+        run: |
+          helm package charts/claude-sandbox -d /tmp/pkg
+          helm push /tmp/pkg/claude-sandbox-*.tgz "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          echo "pushed oci://ghcr.io/${{ github.repository_owner }}/charts/claude-sandbox:$(sed -n 's/^version: *//p' charts/claude-sandbox/Chart.yaml)" >> "$GITHUB_STEP_SUMMARY"

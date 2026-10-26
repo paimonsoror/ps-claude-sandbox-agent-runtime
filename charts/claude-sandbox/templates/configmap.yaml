@@ -1,0 +1,23 @@
+{{- range $sb := .Values.sandboxes }}
+{{- if $sb.enabled }}
+{{- $ctx := dict "root" $ "sb" $sb }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "claude-sandbox.sb.fullname" $ctx }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "claude-sandbox.labels" $ | nindent 4 }}
+    claude-sandbox/name: {{ $sb.name }}
+data:
+  # srt policy: proxy allowlist, write-allow roots, read denies. Mounted read-only at /etc/srt.
+  settings.json: |-
+    {{- include "claude-sandbox.sb.srtSettings" $ctx | nindent 4 }}
+{{- if eq $sb.kind "workspace" }}
+  # Claude Code managed settings, highest precedence (mounted at /etc/claude-code).
+  managed-settings.json: |-
+    {{- include "claude-sandbox.sb.managedSettings" $ctx | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

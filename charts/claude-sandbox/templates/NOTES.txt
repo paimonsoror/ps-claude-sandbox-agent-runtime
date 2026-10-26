@@ -1,0 +1,24 @@
+claude-sandbox {{ .Chart.Version }} in namespace {{ .Release.Namespace }}
+isolation: mode={{ .Values.isolation.mode }} wrap={{ .Values.isolation.wrap }} policy={{ .Values.network.policy.engine }}
+
+Sandboxes:
+{{- range $sb := .Values.sandboxes }}
+{{- $ctx := dict "root" $ "sb" $sb }}
+  - {{ $sb.name }} ({{ $sb.kind }}): {{ ternary "enabled" "disabled" $sb.enabled }} -> deploy/{{ include "claude-sandbox.sb.fullname" $ctx }}
+{{- end }}
+
+Secrets this chart references but does not create:
+{{- range $sb := .Values.sandboxes }}
+{{- if and $sb.enabled (eq $sb.kind "workspace") $sb.github.existingSecret }}
+  - {{ $sb.github.existingSecret }} (key {{ $sb.github.key | default "token" }}): optional GitHub token for sandbox {{ $sb.name }}
+{{- end }}
+{{- if and $sb.enabled (eq $sb.kind "managed-agents-worker") }}
+  - {{ $sb.environment.existingSecret }} (keys ANTHROPIC_ENVIRONMENT_ID, ANTHROPIC_ENVIRONMENT_KEY): required by sandbox {{ $sb.name }}
+{{- end }}
+{{- end }}
+
+First start of a workspace (one-time, per Claude home volume):
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/<name>            # waits for a login
+  kubectl -n {{ .Release.Namespace }} exec -it deploy/<name> -- claude auth login
+  kubectl -n {{ .Release.Namespace }} attach -it deploy/<name>         # answer "Enable Remote Control? y", then Ctrl-P Ctrl-Q
+Then open claude.ai/code or the Claude app and pick the session named <prefix>-<adjective>-<animal>.
