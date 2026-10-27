@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Research · Claude Sandbox Runtime</title>
 <meta name="description" content="The primary sources the design rests on: Anthropic's sandbox-runtime and Claude Code documentation, Kubernetes user namespaces, the control frameworks, and the north-star projects.">
-<link rel="stylesheet" href="assets/site.css?v=20261027b">
-<script src="assets/site.js?v=20261027b"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027c">
+<script src="assets/site.js?v=20261027c"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -14,8 +14,12 @@
 <section class="hero" style="padding-bottom:20px">
   <div class="wrap">
     <span class="eyebrow">Research</span>
-    <h1>The facts the design <span>rests on</span></h1>
-    <p class="lede">Read on 2026-10-26. Where a fact decided something, the ADR that used it is named. Items that could not be verified from a primary source are marked.</p>
+    <h1>The sources <span>behind every claim</span></h1>
+    <p class="lede">We read the primary documentation for everything this design depends on, and we list it here with the decision that used it. Where we couldn't confirm something from an official source, we say so.</p>
+    <div class="plain">
+      <h3>In plain terms</h3>
+      <p>This is the reference shelf. You don't need it to understand the project, but if you want to check one of our claims, or you're planning to port this somewhere else, start here. Most links go to Anthropic's Claude Code and Claude Platform docs, the Kubernetes docs, and the security frameworks on the Controls page.</p>
+    </div>
   </div>
 </section>
 
@@ -36,6 +40,8 @@
         <tr><td>Managed settings at /etc/claude-code/managed-settings.json; <code>permissions.disableBypassPermissionsMode</code>, <code>forceLoginMethod</code>, <code>allowedProviders</code>, <code>DISABLE_UPDATES</code>.</td><td><a href="https://code.claude.com/docs/en/managed-settings" rel="noopener">Managed settings</a>; env-vars</td><td>ADR-0005, 0013</td></tr>
         <tr><td>Network requirements: api.anthropic.com, claude.ai, claude.com, platform.claude.com, sso.claude.com; Datadog hosts only for optional telemetry.</td><td><a href="https://code.claude.com/docs/en/network-config" rel="noopener">Network configuration</a></td><td>ADR-0006</td></tr>
         <tr><td>Self-hosted sandboxes: the worker polls the environment's queue with an environment key; Anthropic keeps the control plane; image hardening, egress, key storage, per-session isolation and retention are the operator's; one environment per trust boundary; the per-session secret only into the sandbox serving that session.</td><td><a href="https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes" rel="noopener">Self-hosted sandboxes</a>, <a href="https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes-security" rel="noopener">security model</a>, workers, reference</td><td>ADR-0004, 0007, 0010</td></tr>
+        <tr><td>Managed Agents: the Console manages environments and keys, sessions (timeline, transcript, inspector), workspaces, webhooks and tracing. Queue numbers come only from the work-stats API (<code>depth</code>, <code>pending</code>, <code>workers_polling</code> as a count). There is no list of workers and no autoscaler.</td><td><a href="https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes-operations" rel="noopener">Self-hosted operations</a>, <a href="https://platform.claude.com/docs/en/api/beta/environments/work" rel="noopener">Work API</a>, <a href="https://platform.claude.com/docs/en/managed-agents/session-observability" rel="noopener">Session observability</a></td><td>ADR-0017</td></tr>
+        <tr><td>Claude Code self-hosted environments (beta, Team and Enterprise): runners on your own infrastructure, an admin status and Activity view, Prometheus metrics, an example Kubernetes Deployment, an autoscaling orchestrator, HPA/KEDA guidance. Remote Control has an admin on/off switch but no list of machines.</td><td><a href="https://code.claude.com/docs/en/self-hosted-environments" rel="noopener">Self-hosted environments</a>, <a href="https://code.claude.com/docs/en/self-hosted-environments-deploy" rel="noopener">deploy</a>, <a href="https://code.claude.com/docs/en/remote-control" rel="noopener">Remote Control</a></td><td>ADR-0017</td></tr>
       </tbody>
     </table></div>
   </div>

@@ -10,6 +10,7 @@
     ["evidence.html", "Evidence"],
     ["decisions.html", "Decisions"],
     ["controls.html", "Controls"],
+    ["fleet.html", "Fleet"],
     ["north-star.html", "North star"],
     ["plan.html", "Plan & runbook"],
     ["research.html", "Research"],

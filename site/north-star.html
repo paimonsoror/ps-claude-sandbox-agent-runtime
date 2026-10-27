@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>North star · Claude Sandbox Runtime</title>
 <meta name="description" content="The target a principal engineer described, decoded from primary sources and mapped layer by layer against what the homelab build is today.">
-<link rel="stylesheet" href="assets/site.css?v=20261027b">
-<script src="assets/site.js?v=20261027b"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027c">
+<script src="assets/site.js?v=20261027c"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -14,9 +14,10 @@
 <section class="hero" style="padding-bottom:20px">
   <div class="wrap">
     <span class="eyebrow">North star</span>
-    <h1>What was asked for, what was built, and the <span>distance</span> between them</h1>
+    <h1>Where our principal engineer wants this to go, and <span>how far we are</span></h1>
     <p class="quote" style="font-size:clamp(1.1rem,2.4vw,1.5rem);font-style:normal;color:var(--text)">"We basically are asking for an on-premise version of <span class="term" data-t="cp" tabindex="0" role="button">Google's control plane</span> around <span class="term" data-t="sub" tabindex="0" role="button">substrate</span>. But with <span class="term" data-t="vm" tabindex="0" role="button">Lambda microVM</span> with <span class="term" data-t="os" tabindex="0" role="button">OpenShell</span> as a <span class="term" data-t="prov" tabindex="0" role="button">backend provider</span>."<cite>a principal engineer, 2026-10-26</cite></p>
-    <p class="muted">Tap a term for what it names, from the primary sources.</p>
+    <p class="lede" style="margin-top:14px">Our principal engineer summed up the target in one sentence. It packs a lot of industry shorthand into a few words. This page unpacks each term, shows what we built next to it, and explains every difference.</p>
+    <div class="plain"><h3>In plain terms</h3><p>Today we hand-build each sandbox from a recipe and it runs until we remove it. The target adds a <b>manager</b> that creates a fresh sandbox for every task, keeps some warm and ready, and cleans them up afterwards, and it lets that manager put each sandbox in a choice of containers, including a tiny virtual machine of its own. What we built is the bottom layer of that picture, and it carries over. Tap any underlined term in the quote for its definition.</p></div>
     <div class="callout" id="termdetail"><h3 style="margin-top:0">Pick a term</h3><p class="muted">Its definition, source and where it shows up in our build appear here.</p></div>
   </div>
 </section>
@@ -24,8 +25,8 @@
 <section style="padding-top:10px">
   <div class="wrap">
     <span class="eyebrow">The sentence, assembled</span>
-    <h2>A control plane on top, swappable isolation underneath, the same image at the bottom</h2>
-    <p>The <b>control plane</b> owns the life of a sandbox: declare it, keep warm capacity, bind a session to one, route to it, pause, snapshot, delete. The <b>substrates</b> own what a session can touch while it runs. The two providers named are not peers: the microVM is a <i>where</i> (a kernel boundary), OpenShell is a <i>what</i> (a policy and credential boundary inside the sandbox), and OpenShell can run on a microVM. No product ships the combination on-premises today.</p>
+    <h2>A manager on top, a choice of walls underneath, our sandbox at the bottom</h2>
+    <p>Read the sentence as two halves. The <b>control plane</b> is the manager: it creates a sandbox when work arrives, keeps spares warm, routes each session to its sandbox and cleans up afterwards. The <b>substrate</b> is what each sandbox is built from, and the sentence names two options: a <b>microVM</b>, which gives each sandbox its own tiny virtual machine and kernel, and <b>OpenShell</b>, which polices what the agent inside may do. They solve different problems and can be combined. Nobody sells all of this as one product you can run on your own hardware today.</p>
     <div class="stage-controls">
       <div class="toggle" role="group" aria-label="View">
         <button class="on" data-v="ns">North star</button>
@@ -44,11 +45,11 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Layer</th><th>North star</th><th>Today</th><th>Status</th><th>Why the difference</th></tr></thead>
       <tbody>
-        <tr><td><b>Lifecycle API</b></td><td>Sandbox / Template / WarmPool / Claim CRDs and a controller</td><td>One Helm release per sandbox from an ApplicationSet; long-lived Deployments</td><td><span class="pill bad">missing</span></td><td>Two sandboxes, one owner: a directory per sandbox is the simplest thing that works and is already the shape a template would take. The CRDs are the next layer once per-session Managed Agents sandboxes are needed.</td></tr>
+        <tr><td><b>Lifecycle API</b></td><td>Sandbox / Template / WarmPool / Claim CRDs and a controller</td><td>One Helm release per sandbox from an ApplicationSet; long-lived Deployments</td><td><span class="pill bad">missing</span></td><td>Two sandboxes and one person to run them: a directory per sandbox is the simplest thing that works and is already the shape a template would take. The CRDs are the next layer once per-session Managed Agents sandboxes are needed.</td></tr>
         <tr><td><b>Session routing</b></td><td>Sandbox Router by header, scoped tokens</td><td>None; sandboxes only connect outbound and listen on nothing</td><td><span class="pill ok">not needed yet</span></td><td>Zero inbound surface was deliberate. A router matters when something calls into sandboxes.</td></tr>
         <tr><td><b>Kernel boundary</b></td><td>Firecracker / libkrun / Kata microVM per session</td><td>Shared host kernel; pod user namespace + bubblewrap + seccomp</td><td><span class="pill bad">gap</span></td><td>Single bare-metal node without nested virtualisation. The chart already takes <code>isolation.runtimeClassName</code>; adding a microVM runtime is a hardware change. The user namespace is the compensating control.</td></tr>
         <tr><td><b>In-sandbox policy engine</b></td><td>OpenShell supervisor: Landlock, seccomp notify, hot-reloadable per-binary egress, prover</td><td>Anthropic sandbox-runtime: bubblewrap binds, seccomp filter, proxy allowlist, live config over a control fd</td><td><span class="pill warn">different, same shape</span></td><td>srt is what Claude Code itself uses, one npm install, and knows Claude Code's configuration paths. OpenShell is 0.1.x, needs its gateway plus the agent-sandbox CRDs, and is not on Anthropic's provider list.</td></tr>
-        <tr><td><b>Credentials</b></td><td>"The agent never sees real credentials"; org key never reaches compute</td><td>The wrapped process reads its own login and a scoped GitHub token; the worker holds only a queue-scoped key</td><td><span class="pill warn">partial</span></td><td>Accepted residual for one owner; srt's credential masking behind TLS termination is the in-family path.</td></tr>
+        <tr><td><b>Credentials</b></td><td>"The agent never sees real credentials"; org key never reaches compute</td><td>The wrapped process reads its own login and a scoped GitHub token; the worker holds only a queue-scoped key</td><td><span class="pill warn">partial</span></td><td>A risk we accept for a single-person homelab; srt's credential masking behind TLS termination is the in-family path.</td></tr>
         <tr><td><b>Egress</b></td><td>L7 with TLS inspection; VPC connector; FQDN policy</td><td>Two layers from one list: srt allowlist + Cilium toFQDNs on 443</td><td><span class="pill ok">equivalent by name</span></td><td>TLS inspection is the missing step (domain fronting residual).</td></tr>
         <tr><td><b>Ephemerality</b></td><td>VM per session, destroyed or snapshotted</td><td>Workspaces persist by design; worker sessions share one /workspace</td><td><span class="pill warn">partial</span></td><td>A workspace is a developer's machine and should persist. The worker gap is plan phase 6.</td></tr>
         <tr><td><b>Policy delivery</b></td><td>Gateway-owned global policy; admission policy in GKE</td><td>Values files in git, GitOps</td><td><span class="pill ok">fits</span></td><td>GitOps is the policy delivery for a homelab; an enterprise adds admission enforcement.</td></tr>
@@ -60,15 +61,15 @@
 
 <section>
   <div class="wrap">
-    <span class="eyebrow">The path</span>
-    <h2>Four steps, each useful on its own</h2>
+    <span class="eyebrow">How we get there</span>
+    <h2>Four steps, each one useful on its own</h2>
     <div class="phases">
-      <div class="phase reveal"><div><b>Keep today's chart for the owner's workspaces</b><p class="muted">They are long-lived developer machines; a lifecycle API adds nothing for them.</p></div><span class="pill ok">now</span></div>
+      <div class="phase reveal"><div><b>Keep today's chart for our workspaces</b><p class="muted">They are long-lived developer machines; a lifecycle API adds nothing for them.</p></div><span class="pill ok">now</span></div>
       <div class="phase reveal d1"><div><b>Control plane first: per-session Managed Agents sandboxes</b><p class="muted">Install kubernetes-sigs/agent-sandbox; replace the always-on worker with a poller that creates one SandboxClaim per work item from a SandboxTemplate built from this image; evaluate the warm pool. The on-premises half of the sentence with the substrate we already have.</p><p class="muted"><b>Gate:</b> a controller install; its own ADR and app-of-apps entry.</p></div><span class="pill warn">plan 6</span></div>
       <div class="phase reveal d2"><div><b>Substrate second: a microVM RuntimeClass</b><p class="muted">When a KVM-capable node exists, add Kata or a libkrun-backed runtime to the template and run srt in weak mode inside it. This also closes the PSS restricted gap.</p><p class="muted"><b>Gate:</b> hardware with KVM.</p></div><span class="pill">later</span></div>
       <div class="phase reveal d3"><div><b>Policy layer evaluation: OpenShell vs srt</b><p class="muted">Compare on the controls rows it would change: credential brokering, per-binary L7 egress, policy prover. Switch only if it wins there and Anthropic lists it as a provider; otherwise pursue srt's own credential masking and TLS termination.</p><p class="muted"><b>Gate:</b> an OpenShell release on Anthropic's provider list.</p></div><span class="pill">later</span></div>
     </div>
-    <div class="callout" style="margin-top:24px"><p><b>One line for the principal engineer.</b> Same substrate shape (hardened image plus a policy document, deny-all egress, no credentials in git), the control plane and the kernel boundary still to come, each blocked by one concrete thing: a controller install, and a node with KVM.</p></div>
+    <div class="callout" style="margin-top:24px"><p><b>The one-line answer for our principal engineer.</b> Same substrate shape (hardened image plus a policy document, deny-all egress, no credentials in git), the control plane and the kernel boundary still to come, each blocked by one concrete thing: a controller install, and a node with KVM.</p></div>
   </div>
 </section>
 

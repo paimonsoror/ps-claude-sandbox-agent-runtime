@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fleet management · Claude Sandbox Runtime</title>
+<meta name="description" content="How Anthropic's design expects a fleet of sandboxes to be managed: what the Claude Console and claude.ai admin settings show, what they don't, and what an enterprise brings itself.">
+<link rel="stylesheet" href="assets/site.css?v=20261027c">
+<script src="assets/site.js?v=20261027c"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Fleet management</span>
+    <h1>Who runs the <span>dashboard</span> when there are hundreds of sandboxes?</h1>
+    <p class="lede">Two sandboxes are easy to keep an eye on. A company with hundreds needs to see them all, scale them up and down, and spot the broken ones. We looked into how Anthropic expects that to work, and whether the Claude Console is meant to be that control panel.</p>
+    <div class="plain">
+      <h3>The short answer</h3>
+      <p>Anthropic runs the <b>brain</b>: the model, the agent's reasoning, the queue of work and the session history. You run the <b>hands</b>: the machines and sandboxes where commands actually execute. The Claude Console shows you the brain side very well. It doesn't show or manage the hands. There is no Anthropic dashboard that lists our sandbox pods, tells us which one is unhealthy, or scales them. That part is expected to come from your own tooling, which for us is Kubernetes, ArgoCD and Grafana.</p>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">Who runs what</span>
+    <h2>Two halves, two sets of tools</h2>
+    <div class="stage-controls">
+      <div class="toggle" role="group" aria-label="View">
+        <button class="on" data-v="split">Who runs what</button>
+        <button data-v="see">What Anthropic shows you</button>
+        <button data-v="build">What you build</button>
+      </div>
+    </div>
+    <div class="stage" id="fleet-stage"><div class="caption">Starting…</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Agent workers</span>
+    <h2>For Managed Agents, the Console is the brain's dashboard</h2>
+    <div class="split">
+      <div class="card reveal"><span class="pill ok">What you get</span><h3>In the Claude Console</h3><ul>
+        <li><b>Environments:</b> create a self-hosted environment, generate and revoke its key. Keys can only be made here.</li>
+        <li><b>Sessions:</b> every session with its status, agent, tokens, cost, a timeline and a full transcript of every tool call.</li>
+        <li><b>Workspaces:</b> separate spend limits, rate limits and keys per team, up to 100. Anthropic suggests one workspace and environment per trust boundary.</li>
+        <li><b>Webhooks:</b> get notified when a session starts, goes idle or ends.</li>
+        <li><b>Tracing:</b> send OpenTelemetry traces of agent turns to your own collector.</li>
+      </ul></div>
+      <div class="card reveal d1"><span class="pill bad">What you don't get</span><h3>No view of the workers</h3><ul>
+        <li>No list of workers, no per-worker health, no "this one stopped".</li>
+        <li>Queue numbers come from an API call, not a page: how many tasks are waiting, how many were claimed, and a <i>count</i> of workers that checked in during the last 30 seconds.</li>
+        <li>No autoscaler. Anthropic's guidance is to watch the queue numbers and scale your own workers.</li>
+        <li>No metrics endpoint on the worker. You get structured logs and, from the SDK workers, traces.</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Claude Code workspaces</span>
+    <h2>For Claude Code, there are two products, and we used the lighter one</h2>
+    <div class="split">
+      <div class="card reveal"><span class="pill accent">What we built on</span><h3>Remote Control</h3><p>Run <code>claude remote-control</code> anywhere and drive it from your phone. That's what our workspace pod does. For admins, claude.ai has an on/off switch for Remote Control and a "trusted devices" option. It does not have a list of the machines running it, and Claude Code's own telemetry doesn't name the machine unless you tag it yourself.</p><p class="muted">Great for one person or a small team. Not built for fleet management.</p></div>
+      <div class="card reveal d1"><span class="pill sn">Built for fleets</span><h3>Self-hosted environments</h3><p>A separate Claude Code feature, in public beta for Team and Enterprise plans. You run <b>runners</b> on your own infrastructure. People start sessions from claude.ai/code and pick your environment, and the sessions run on your runners. Admins get a status page (Healthy or No runners), an <b>Activity</b> tab with each runner and any failed sessions, and a Retry button.</p><p class="muted">Each runner exposes Prometheus metrics, Anthropic ships an example Kubernetes Deployment and an autoscaling orchestrator, and the docs tell you to feed its pending-sessions metric into Kubernetes autoscaling (HPA or KEDA).</p></div>
+    </div>
+    <div class="callout"><p><b>What this means for us.</b> If we take this design into an enterprise, the Claude Code workspace kind should move from Remote Control in a pod to <b>self-hosted environment runners in our sandbox pods</b>. Our sandbox, network fence and GitOps delivery stay the same. What we gain is Anthropic's admin view, runner metrics and autoscaling hooks. We recorded this as ADR-0017.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The full split</span>
+    <h2>Capability by capability</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Capability</th><th>Anthropic provides</th><th>You provide</th></tr></thead>
+      <tbody>
+        <tr><td><b>The model, the agent's reasoning, the work queue, session history</b></td><td>Anthropic's control plane</td><td>Nothing</td></tr>
+        <tr><td><b>Environments and keys</b></td><td>Claude Console (agents); claude.ai admin settings (Claude Code)</td><td>Storing and rotating the keys in your own secret store</td></tr>
+        <tr><td><b>The worker or runner program</b></td><td><code>ant</code> CLI and SDK workers; <code>claude self-hosted-runner</code></td><td>The container image, hardened</td></tr>
+        <tr><td><b>Starting, stopping and scaling sandboxes</b></td><td>Claude Code: an example Deployment and an autoscaling orchestrator. Agents: nothing.</td><td>Kubernetes, GitOps, autoscaling on queue numbers</td></tr>
+        <tr><td><b>Seeing the fleet</b></td><td>Agents: queue numbers by API. Claude Code runners: status and Activity tab. Remote Control: none.</td><td>A fleet dashboard (Prometheus, Grafana, OpenTelemetry)</td></tr>
+        <tr><td><b>Seeing a single session</b></td><td>Console session viewer; claude.ai/code</td><td>Nothing</td></tr>
+        <tr><td><b>Isolation, network rules, log retention</b></td><td>Nothing. Anthropic is explicit that this stops at your sandbox.</td><td>All of it: for us, sandbox-runtime, the network fence, Loki</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">What we'd build</span>
+    <h2>A fleet view, made from tools we already run</h2>
+    <p>Everything a fleet dashboard needs already exists in our cluster, or comes from the steps above. This is the plan we wrote down, in the order we'd do it.</p>
+    <div class="phases">
+      <div class="phase reveal"><div><b>One Grafana dashboard for every sandbox</b><p class="muted">Pod status per sandbox from Kubernetes, sync health per sandbox from ArgoCD (each sandbox is already its own ArgoCD app), refused connections from the network fence, and sandbox-runtime's refusals from the logs.</p></div><span class="pill">plan 4</span></div>
+      <div class="phase reveal d1"><div><b>Queue numbers for the agent workers</b><p class="muted">A small exporter that reads waiting tasks and live worker counts for each environment and hands them to Prometheus. It needs an Anthropic API key, so it runs outside the sandbox namespace with a key scoped to one Console workspace.</p></div><span class="pill">plan 4</span></div>
+      <div class="phase reveal d2"><div><b>Scale workers on those numbers</b><p class="muted">With one sandbox per session (plan phase 6), KEDA can add worker pods when tasks are waiting and remove them when the queue is empty.</p></div><span class="pill">plan 6</span></div>
+      <div class="phase reveal d3"><div><b>Move workspaces to self-hosted environment runners</b><p class="muted">On a Team or Enterprise plan: the same sandbox, running Anthropic's runner instead of Remote Control, which adds the admin Activity view and runner metrics.</p></div><span class="pill">enterprise</span></div>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+<script>
+(function () {
+  const F = window.Site.Flow;
+  const spec = {
+    w: 1100, h: 380, nw: 150, nh: 58, minWidth: 820, label: "Anthropic runs the brain, you run the hands",
+    lanes: [["Your people", 130], ["Anthropic runs this", 400], ["You run this", 700], ["Your tooling", 975]],
+    nodes: [
+      { id: "users", label: "Developers", sub: "phone, browser, API", x: 130, y: 110, kind: "idp" },
+      { id: "admin", label: "Admins", sub: "Console, claude.ai admin", x: 130, y: 280, kind: "idp" },
+      { id: "brain", label: "Model and agent loop", sub: "the brain", x: 400, y: 80, kind: "sn" },
+      { id: "queue", label: "Work queue", sub: "tasks waiting", x: 400, y: 190, kind: "sn" },
+      { id: "console", label: "Console", sub: "sessions, keys, spend", x: 400, y: 300, kind: "sn" },
+      { id: "w1", label: "Sandbox pod", sub: "worker or runner", x: 700, y: 80, kind: "maestro" },
+      { id: "w2", label: "Sandbox pod", sub: "worker or runner", x: 700, y: 190, kind: "maestro" },
+      { id: "w3", label: "Sandbox pod", sub: "worker or runner", x: 700, y: 300, kind: "maestro" },
+      { id: "gitops", label: "GitOps", sub: "ArgoCD, Helm", x: 975, y: 80 },
+      { id: "scale", label: "Autoscaling", sub: "KEDA, HPA", x: 975, y: 190 },
+      { id: "dash", label: "Fleet dashboard", sub: "Grafana, Prometheus", x: 975, y: 300 },
+    ],
+    edges: [
+      { id: "users-brain", from: "users", to: "brain" },
+      { id: "admin-console", from: "admin", to: "console" },
+      { id: "brain-queue", from: "brain", to: "queue", kind: "v" },
+      { id: "queue-w1", from: "queue", to: "w1", kind: "c", bend: -30 },
+      { id: "queue-w2", from: "queue", to: "w2" },
+      { id: "queue-w3", from: "queue", to: "w3", kind: "c", bend: 30 },
+      { id: "gitops-w1", from: "gitops", to: "w1", dashed: true },
+      { id: "scale-w2", from: "scale", to: "w2", dashed: true },
+      { id: "dash-w3", from: "dash", to: "w3", dashed: true },
+      { id: "console-queue", from: "console", to: "queue", kind: "v", dashed: true },
+    ],
+  };
+  const flow = F.mount(document.getElementById("fleet-stage"), spec);
+  const views = {
+    split: () => { ["brain", "queue", "console"].forEach(id => flow.setNode(id, "active-sn")); ["w1", "w2", "w3"].forEach(id => flow.setNode(id, "active-maestro")); flow.caption("Anthropic runs the model, the agent loop, the work queue and the Console. You run the sandbox pods where commands execute, and the tooling that keeps them healthy."); },
+    see: () => { ["brain", "queue", "console"].forEach(id => flow.setNode(id, "active-sn")); ["w1", "w2", "w3", "gitops", "scale", "dash"].forEach(id => flow.setNode(id, "off")); flow.setNode("admin", "active-idp"); flow.caption("What Anthropic shows an admin: sessions, transcripts, keys, spend, and queue numbers. The individual sandbox pods are not visible from here; the Console sees work being claimed, not who claimed it."); },
+    build: () => { ["brain", "queue", "console"].forEach(id => flow.setNode(id, "off")); ["w1", "w2", "w3"].forEach(id => flow.setNode(id, "active-maestro")); ["gitops", "scale", "dash"].forEach(id => flow.setNode(id, "active")); flow.caption("What you bring: GitOps to create and update sandboxes, autoscaling driven by the queue numbers, and a dashboard that shows every pod's health. For us that is ArgoCD, KEDA, Prometheus and Grafana."); },
+  };
+  function show(v) {
+    flow.reset(); views[v]();
+    if (v === "split") { flow.packet("queue-w2", { label: "task", cls: "sn" }); }
+    if (v === "see") { flow.packet("admin-console", { label: "look", cls: "idp" }); }
+    if (v === "build") { flow.packet("scale-w2", { label: "add pods" }); }
+  }
+  document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => { document.querySelectorAll(".toggle button").forEach(x => x.classList.remove("on")); b.classList.add("on"); show(b.dataset.v); }));
+  show("split");
+})();
+</script>
+</body>
+</html>

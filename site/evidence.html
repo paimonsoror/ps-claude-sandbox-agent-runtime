@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Evidence · Claude Sandbox Runtime</title>
 <meta name="description" content="Measurements from the homelab node: the feasibility spike, the chart renders, the server-side dry run, and the first rollout.">
-<link rel="stylesheet" href="assets/site.css?v=20261027b">
-<script src="assets/site.js?v=20261027b"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027c">
+<script src="assets/site.js?v=20261027c"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -14,8 +14,12 @@
 <section class="hero" style="padding-bottom:20px">
   <div class="wrap">
     <span class="eyebrow">Evidence</span>
-    <h1>Measured on the node, <span>not estimated</span></h1>
-    <p class="lede">Every claim about the boundary comes from a command that ran on the cluster on 2026-10-26. The spike manifest and the raw results are in <code>docs/spike/</code>; the chart renders are reproducible with the <code>ci/*-values.yaml</code> files.</p>
+    <h1>We tested it on the real server, <span>not on paper</span></h1>
+    <p class="lede">Every claim we make about the sandbox comes from a command we ran on our cluster. This page shows the tests, what we expected, and what actually happened, including the things that went wrong along the way. The raw files are in <code>docs/spike/</code>.</p>
+    <div class="plain">
+      <h3>In plain terms</h3>
+      <p>Before building anything we ran a quick experiment to see whether the sandbox would work inside Kubernetes at all. It does, but only with one specific setting, and the table below shows why. Then we checked the finished build: what Claude can reach, what it can write, and what happens when it tries something it shouldn't. Red marks in the tables are things we expected to fail, and they did.</p>
+    </div>
   </div>
 </section>
 
@@ -120,7 +124,7 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Step</th><th>Observed</th></tr></thead>
       <tbody>
-        <tr><td>Secret</td><td><code>claude-sandbox-managed-agents</code> with keys <code>ANTHROPIC_ENVIRONMENT_ID</code>, <code>ANTHROPIC_ENVIRONMENT_KEY</code>, created by the owner outside git</td></tr>
+        <tr><td>Secret</td><td><code>claude-sandbox-managed-agents</code> with keys <code>ANTHROPIC_ENVIRONMENT_ID</code>, <code>ANTHROPIC_ENVIRONMENT_KEY</code>, created by hand, outside Git</td></tr>
         <tr><td>enable</td><td>one line in <code>sandboxes/worker/values.yaml</code>; <code>claude-sandbox-worker</code> Synced, Healthy; pod Running on <code>sha-c7e6050</code></td></tr>
         <tr><td>log</td><td><code>starting ant beta:worker poll for environment env_…</code> then <code>{"level":"INFO","msg":"idle; polling for work","component":"work-poller"}</code></td></tr>
         <tr><td>policy</td><td>DNS to the two resolvers (53, 5353) and <code>api.anthropic.com</code> on 443; nothing else; no dropped flows in Hubble</td></tr>

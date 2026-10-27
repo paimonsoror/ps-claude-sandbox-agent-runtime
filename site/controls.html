@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Controls · Claude Sandbox Runtime</title>
 <meta name="description" content="The build measured against published agent-sandbox controls from OWASP, Anthropic, NIST, CSA, Kubernetes, MITRE ATLAS and commercial sandboxes, with what an enterprise port needs for each.">
-<link rel="stylesheet" href="assets/site.css?v=20261027b">
-<script src="assets/site.js?v=20261027b"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027c">
+<script src="assets/site.js?v=20261027c"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -14,8 +14,12 @@
 <section class="hero" style="padding-bottom:20px">
   <div class="wrap">
     <span class="eyebrow">Controls</span>
-    <h1>Where the build stands against <span>published controls</span></h1>
-    <p class="lede">Sixty-odd controls from OWASP (LLM Top 10, Agentic Threats and Mitigations, Securing Agentic Applications), Anthropic's own sandboxing and Managed Agents guidance, NIST SP 800-190 and AI 600-1, the CSA red-teaming guide, Kubernetes Pod Security Standards and the agent-sandbox threat model, MITRE ATLAS, and the security models of Codex, Docker Sandboxes, E2B and Daytona. Every row has a status and a porting note; the full matrix is <code>docs/controls-matrix.md</code>.</p>
+    <h1>How our build stacks up against <span>published security guidance</span></h1>
+    <p class="lede">Security groups and vendors have published a lot of advice on how to run AI agents safely. We collected about sixty concrete controls from OWASP, NIST, Anthropic, the Cloud Security Alliance, Kubernetes, MITRE and several commercial sandbox providers, and checked our build against each one. The full list, with sources, is <code>docs/controls-matrix.md</code>.</p>
+    <div class="plain">
+      <h3>In plain terms</h3>
+      <p>Each control gets one of three marks. <b>Met</b> means we do it and can show it. <b>Partial</b> means we do most of it and say what is missing. <b>Gap</b> means we don't do it yet. We are in good shape on the things that matter most for a homelab: what Claude can write, where it can connect, and what it can see. The gaps are things a company would need before rolling this out widely, and we list exactly what would close each one.</p>
+    </div>
   </div>
 </section>
 
@@ -25,18 +29,18 @@
     <h2>By domain</h2>
     <div class="legend"><span class="m">Met</span><span class="p">Partial, with a stated residual</span><span class="g">Gap</span></div>
     <div class="table-wrap"><table id="score"><thead><tr><th>Domain</th><th>Met</th><th>Partial</th><th>Gap</th><th style="width:38%">Share</th></tr></thead><tbody></tbody></table></div>
-    <p class="muted">Strong where the sandbox runtime and Kubernetes give controls for free: filesystem, egress, no cluster credentials, non-root, user namespaces. The gaps cluster in three places an enterprise cares about and one owner can defer.</p>
+    <p class="muted">We score well where the sandbox runtime and Kubernetes do the heavy lifting: files, network access, no cluster credentials, no root. The gaps sit in three places that matter to a company and that a homelab can live with for now.</p>
   </div>
 </section>
 
 <section>
   <div class="wrap">
     <span class="eyebrow">The three gaps</span>
-    <h2>What an enterprise port must close first</h2>
+    <h2>What a company would need to add first</h2>
     <div class="cards">
-      <div class="card reveal"><span class="pill bad">kernel</span><h3>A separate kernel per sandbox</h3><p>Sources: OWASP SAAG 3.2.3a and 9.2a, agent-sandbox threat model, Docker Sandboxes, E2B. Here: one bare-metal node, no nested virtualisation; the defence is user namespace + bubblewrap + seccomp on a shared kernel.</p><p><b>Port:</b> a sandboxed RuntimeClass (gVisor or Kata/microVM) through <code>isolation.runtimeClassName</code> with srt in weak mode inside; this also restores PSS <i>restricted</i>.</p></div>
-      <div class="card reveal d1"><span class="pill bad">credentials</span><h3>Credentials never inside the sandbox</h3><p>Sources: Anthropic cloud sessions' credential proxy, Docker and Daytona secret placeholders, OWASP SAAG 3.2.8. Here: the wrapped process can read its own login and the GitHub token; the environment key is queue-scoped.</p><p><b>Port:</b> srt's <code>credentials</code> masking behind <code>tlsTerminate</code> with an enterprise CA, or an external credential proxy; GitHub App tokens per session; Workload Identity Federation.</p></div>
-      <div class="card reveal d2"><span class="pill bad">audit</span><h3>Signed, centralised audit</h3><p>Sources: OWASP ASI T08 and SAAG 9.4, ATLAS M0024, Claude Code OpenTelemetry guidance. Here: stdout in Loki, transcripts on a volume, srt denials only with debug on.</p><p><b>Port:</b> OTLP from Claude Code to the collector, structured srt and Hubble denials, append-only storage with retention and redaction policy.</p></div>
+      <div class="card reveal"><span class="pill bad">kernel</span><h3>A separate kernel for each sandbox</h3><p>All our sandboxes share the server's operating system kernel. A bug in the kernel could, in theory, let one escape. The guidance from OWASP, Kubernetes and the commercial sandbox providers is to give each sandbox its own small virtual machine.</p><p><b>What it takes:</b> servers that support virtualisation, and one setting in our chart (<code>runtimeClassName</code>) to run each sandbox in gVisor or a microVM. That also brings us up to Kubernetes' strictest pod security level.</p></div>
+      <div class="card reveal d1"><span class="pill bad">credentials</span><h3>Keep passwords and keys out of the sandbox</h3><p>Today Claude can read its own login file and the GitHub token it uses, because it needs them. Anthropic's own cloud sessions, Docker and Daytona do better: the real key is added on the way out, so the sandbox never sees it.</p><p><b>What it takes:</b> turning on sandbox-runtime's credential masking (which needs it to inspect encrypted traffic), short-lived GitHub tokens per session, and Anthropic's workload identity sign-in instead of a stored login.</p></div>
+      <div class="card reveal d2"><span class="pill bad">audit</span><h3>Tamper-proof, central records</h3><p>OWASP and MITRE both ask for a record of every action an agent takes, kept where it can't be altered. Today our logs go to Loki and Claude's session history stays on the sandbox's disk.</p><p><b>What it takes:</b> sending Claude Code's telemetry to our collector, recording every refusal as a structured event, and storing it all somewhere that can't be edited, with a retention policy.</p></div>
     </div>
   </div>
 </section>
