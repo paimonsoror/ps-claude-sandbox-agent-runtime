@@ -92,9 +92,12 @@
         <tr><td>policy</td><td><code>CiliumNetworkPolicy/claude-sandbox-homelab</code> VALID=True</td></tr>
         <tr><td>image</td><td><code>ghcr.io/paimonsoror/claude-sandbox:sha-50409b3</code> pulled in 7 s (296 MB)</td></tr>
         <tr><td>pod</td><td>Running, ready; entrypoint cloned homelab-charts into <code>/workspace</code> through the egress policy, then waits for the claude.ai login</td></tr>
+        <tr><td>inside the pod, outside bubblewrap</td><td><code>uid=1000(agent)</code>; <code>uid_map 0 3707240448 65536</code>; <code>touch /usr/local/x</code> → read-only file system</td></tr>
+        <tr><td>DNS defect found</td><td>Hubble: <code>Policy denied DROPPED</code> to <code>telltaledns-0:5353</code>. The policy allowed 53 to the resolver pods, which answer on 5353 behind their :53 Service; queries fell back to CoreDNS after a timeout. Fixed by a per-resolver port, chart republished, repo-server restarted, hard refresh</td></tr>
+        <tr><td>egress probes after the fix</td><td><code>github.com:443 → 200</code> · <code>api.anthropic.com:443 → 404</code> (reached) · <code>example.com:443 → 000</code> (blocked) · <code>192.168.3.3:443 → 000</code> (blocked)</td></tr>
       </tbody>
     </table></div>
-    <p class="muted">The in-session probes of the running pod (uid map, egress to an allowed and a denied host from outside bubblewrap, read-only root) and the Remote Control boundary probes from a phone session are recorded in <code>docs/plan.md</code> as they are run.</p>
+    <p class="muted">The Remote Control boundary probes from a phone session (inside bubblewrap) are recorded in <code>docs/plan.md</code> once the login is done.</p>
   </div>
 </section>
 

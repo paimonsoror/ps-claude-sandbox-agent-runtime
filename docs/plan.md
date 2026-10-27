@@ -36,7 +36,18 @@ Human steps:
    changed). Note the `sha-<short>` tag it pushes to `ghcr.io/paimonsoror/claude-sandbox`.
    Make the package public the first time (GitHub package settings), as for `courier-controller`.
 
-## Phase 2: first workspace `todo`
+## Phase 2: first workspace `in progress`
+
+**Done 2026-10-27:** the ApplicationSet cutover is merged; `claude-sandbox-homelab` is Synced
+and Healthy; the pod runs as uid 1000 in a user namespace (`uid_map 0 3707240448 65536`) with
+a read-only root; it cloned homelab-charts into `/workspace` and waits for the login.
+A DNS defect was found and fixed on the way: the Cilium policy allowed port 53 to the
+TelltaleDNS pods, which listen on 5353 behind their :53 Service, so queries to the first
+resolver were dropped until the fallback to CoreDNS (Hubble: `Policy denied DROPPED` to
+`telltaledns-0:5353`). Each DNS endpoint now carries its port; after the republish and a hard
+refresh the probes from inside the pod (outside bubblewrap) read: `github.com:443 -> 200`,
+`api.anthropic.com:443 -> 404` (reached), `example.com:443 -> 000` (blocked),
+`192.168.3.3:443 -> 000` (blocked). Steps 4 to 8 below remain.
 
 1. Create the optional GitHub token Secret (fine-grained PAT, contents + pull requests on the
    repositories the workspace will clone):
