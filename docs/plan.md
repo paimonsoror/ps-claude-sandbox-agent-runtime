@@ -69,6 +69,15 @@ policy the sessions get):
 | `unshare -Ur true` | operation not permitted |
 | `touch /workspace/ok-from-sandbox`, `git status` | ok |
 
+Finding (2026-10-27, after the image roll): the server printed its banner but no session
+appeared at claude.ai/code. The banner is printed *before* the "Enable Remote Control? (y/n)"
+prompt, and the prompt line never shows in `kubectl logs`, so the replaced pod had been waiting
+at the prompt since 01:21. Claude Code stores the answer as `remoteDialogSeen: true` in
+`~/.claude.json` (seen in the 2.1.311 binary, not documented); the key was absent on the
+volume. Fixed by seeding it on the volume and restarting, and by having the entrypoint seed
+it on every start. Two diagnostic servers run for 75 s in scratch directories (inside and
+outside srt) both reached the prompt, so srt was not the cause.
+
 Finding: srt's mount-point files for the denied shell startup files show up as untracked
 `.bashrc` and `.bash_profile` in `/workspace` while the server runs. The entrypoint now adds
 those names to `.git/info/exclude`; the fix ships with the next image tag. Step 8 (this log)

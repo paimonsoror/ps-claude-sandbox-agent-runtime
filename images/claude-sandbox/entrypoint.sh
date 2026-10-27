@@ -18,10 +18,13 @@ mkdir -p "$HOME/.claude" "$HOME/.config" "$CLAUDE_CODE_TMPDIR"
 if [ ! -s "$HOME/.claude.json" ]; then
   echo '{}' > "$HOME/.claude.json"
 fi
-# Pre-trust /workspace so the server does not stop on the trust prompt (ADR-0007; documented
-# field projects["<path>"].hasTrustDialogAccepted).
+# Pre-answer the two prompts that would otherwise block a headless server: workspace trust
+# (documented field projects["<path>"].hasTrustDialogAccepted) and the one-time "Enable Remote
+# Control? (y/n)" confirmation, which Claude Code 2.1.311 records as remoteDialogSeen in
+# ~/.claude.json after a `y` (undocumented; verified in the binary). Without the second, every
+# pod restart waits at the prompt with nobody attached (plan.md, 2026-10-27).
 tmp="$(mktemp)"
-jq '.projects["/workspace"].hasTrustDialogAccepted = true' "$HOME/.claude.json" > "$tmp" \
+jq '.projects["/workspace"].hasTrustDialogAccepted = true | .remoteDialogSeen = true' "$HOME/.claude.json" > "$tmp" \
   && mv "$tmp" "$HOME/.claude.json"
 
 # First start: clone the repository into the empty workspace volume. Runs outside srt but

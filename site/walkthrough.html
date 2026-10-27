@@ -92,10 +92,10 @@ Paste code here if prompted &gt; </span><span class="k">[paste the code]</span>
       <div class="card"><h3>What is true at this point</h3><p>The entrypoint's wait loop notices <code>.credentials.json</code> on its next 30-second check and starts <code>srt -- claude remote-control</code>. The login is the owner's own subscription; the sandbox can spend it and nothing else. Renewal, when Claude Code warns of expiry, is the same command again.</p></div>
     </div>
 
-    <h3>Step 3 · Answer the one-time confirmation <span class="pill idp">human step</span></h3>
+    <h3>Step 3 · The one-time confirmation <span class="pill ok">now automatic</span></h3>
     <div class="stepgrid">
       <div>
-        <p>Remote Control asks once per machine whether to enable it. There is no documented way to pre-answer, so the pod keeps a TTY and you attach to it. Answer <code>y</code>, then detach with <kbd>Ctrl-P</kbd> <kbd>Ctrl-Q</kbd>. Never <kbd>Ctrl-C</kbd>: that stops the server.</p>
+        <p>Remote Control asks once per machine whether to enable it, and the banner that says "Take this session with you…" is printed <i>before</i> that question, which makes a waiting server look like a running one. On the first rollout the pod was replaced by an image roll and the new server sat at the prompt with nobody attached. Claude Code records a <code>y</code> as <code>remoteDialogSeen: true</code> in <code>~/.claude.json</code> (found in the binary; not documented), so the entrypoint now seeds that key together with the workspace trust and the step needs no human. If you run an image older than <code>sha-c7e6050</code>'s successor, attach once: answer <code>y</code>, detach with <kbd>Ctrl-P</kbd> <kbd>Ctrl-Q</kbd>, never <kbd>Ctrl-C</kbd>.</p>
         <div class="term"><span class="p">$</span> kubectl -n claude-sandbox attach -it deploy/claude-sandbox-homelab
 <span class="o">[sandbox-entrypoint] starting claude remote-control --spawn worktree --capacity 8 --permission-mode default --remote-control-session-name-prefix homelab
 Enable Remote Control? (y/n) </span><span class="k">y</span>
@@ -119,7 +119,12 @@ control. Press Ctrl+C to stop.</span>
     <h3>Step 4 · Open the session from your phone and verify the boundary</h3>
     <div class="stepgrid">
       <div>
-        <p>In the Claude app's Code tab or at claude.ai/code the session appears as <code>homelab-&lt;adjective&gt;-&lt;animal&gt;</code>. Ask it to run the probes; every one of them was also run as a fresh <code>srt</code> wrap under the same policy, which is what the output below shows.</p>
+        <p>Once the server is past the prompt its screen reads <b>Connected</b> and names the pre-created session and the machine's environment. The machine shows up at claude.ai/code as an <b>environment</b> (next to the cloud <code>default</code>) and the session appears in the session list with a computer icon; new sessions started on that environment get their own git worktree. Ask a session to run the probes; every one of them was also run as a fresh <code>srt</code> wrap under the same policy, which is what the second panel shows.</p>
+        <div class="term"><span class="o">· Connected · homelab-charts
+    Capacity: 1/8 · New sessions will be created in an isolated worktree
+    https://claude.ai/code/session_01Em…  homelab-gleaming-forest
+Continue coding in the Claude mobile app or https://claude.ai/code?environment=env_01JB…
+space to show QR code · w to toggle spawn mode</span></div>
         <div class="term"><span class="p">$</span> id -u; cat /proc/self/uid_map; ls /proc | grep -cE '^[0-9]+$'
 <span class="o">1000
       1000       1000          1
