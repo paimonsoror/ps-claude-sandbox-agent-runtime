@@ -97,10 +97,10 @@ kubectl -n claude-sandbox logs deploy/claude-sandbox-homelab --previous
 kubectl -n claude-sandbox rollout restart deploy/claude-sandbox-homelab
 ```
 
-Maintenance shell without srt (for inspecting volumes): set the entry's `env` to include
-`SANDBOX_KIND=shell`? No: set `kind` is fixed per entry, so instead run a one-off debug pod
-sharing the PVCs is not possible while RWO is bound. Use `kubectl exec` into the running pod; the
-exec shell runs outside bubblewrap but inside the pod's own boundary.
+To inspect the volumes without the server running, `kubectl exec` into the pod: the exec
+shell runs outside bubblewrap but inside the pod's boundary (uid 1000, read-only root, same
+network policy). A separate debug pod cannot mount the PVCs while the sandbox pod holds them
+(ReadWriteOnce); scale the Deployment to zero first if that is needed.
 
 ## Stop everything
 
