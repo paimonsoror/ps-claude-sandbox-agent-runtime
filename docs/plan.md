@@ -158,6 +158,9 @@ ingress, mounting a workspace volume read-only for review. Needs an ADR that ame
 - Tag `chart-v0.1.0` pushed; the `chart` workflow published
   `oci://ghcr.io/paimonsoror/charts/claude-sandbox:0.1.0`
   (digest `sha256:d4d1a023…`), fetched anonymously with `helm show chart`.
-- The homelab-charts entry is staged with `targetRevision: 0.1.0`, `image.tag: sha-50409b3`
-  and `enabled: true`, awaiting commit and merge (phase 2 step 2).
+- The homelab-charts entry (`targetRevision: 0.1.0`, `image.tag: sha-50409b3`,
+  `enabled: true`) is committed as 5d0d55f on branch `claude-sandbox` and pushed. Merging it
+  into `main` is the deploy and is the owner's action (the session's policy blocks pushes to
+  the production app-of-apps branch).
+- `docs/runbook.md` written ahead of phase 4.
 - Not yet run: a live pod from the chart.
