@@ -152,4 +152,12 @@ ingress, mounting a workspace volume read-only for review. Needs an ADR that ame
   `testing`): all 11 objects accepted, so `hostUsers`, `procMount: Unmasked`,
   `appArmorProfile` and the Cilium policy schema are valid on k3s v1.36.4 / Cilium 1.20.1.
 - The app-of-apps chart renders the new `claude-sandbox` Application entry.
-- Not yet run: the image build (needs the GitHub workflow) and a live pod from the chart.
+- Image built by the `image` workflow on the first push (run 40421421697) and again by a manual
+  dispatch: `ghcr.io/paimonsoror/claude-sandbox:sha-50409b3` and `:main`, package public
+  (anonymous manifest fetch returns 200). `chart` workflow lint passed on the same commit.
+- Tag `chart-v0.1.0` pushed; the `chart` workflow published
+  `oci://ghcr.io/paimonsoror/charts/claude-sandbox:0.1.0`
+  (digest `sha256:d4d1a023…`), fetched anonymously with `helm show chart`.
+- The homelab-charts entry is staged with `targetRevision: 0.1.0`, `image.tag: sha-50409b3`
+  and `enabled: true`, awaiting commit and merge (phase 2 step 2).
+- Not yet run: a live pod from the chart.
