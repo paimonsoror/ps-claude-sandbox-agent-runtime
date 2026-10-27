@@ -26,21 +26,23 @@ spec:
   ingress:
     - {}
   egress:
+    {{- range $ep := $pol.dns.endpoints }}
+    # DNS to one resolver, through Cilium's DNS proxy so toFQDNs learns the answers. The port
+    # is the pod's listening port, not the Service port (TelltaleDNS answers on 5353).
     - toEndpoints:
-        {{- range $ep := $pol.dns.endpoints }}
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ $ep.namespace }}
             {{- range $k, $v := $ep.labels }}
             k8s:{{ $k }}: {{ $v | quote }}
             {{- end }}
-        {{- end }}
       toPorts:
         - ports:
-            - port: "53"
+            - port: {{ $ep.port | default "53" | quote }}
               protocol: ANY
           rules:
             dns:
               - matchPattern: "*"
+    {{- end }}
     - toFQDNs:
         {{- range $d := $domains }}
         {{- $host := regexReplaceAll ":[0-9]+$" $d "" }}
@@ -87,9 +89,9 @@ spec:
               {{- toYaml . | nindent 14 }}
           {{- end }}
       ports:
-        - port: 53
+        - port: {{ $ep.port | default 53 }}
           protocol: UDP
-        - port: 53
+        - port: {{ $ep.port | default 53 }}
           protocol: TCP
     {{- end }}
     - to:

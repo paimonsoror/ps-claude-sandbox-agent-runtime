@@ -53,14 +53,18 @@ network:
     # none: no policy object.
     engine: cilium
     dns:
-      # Endpoints the pods may send DNS to. Both the cluster's CoreDNS and TelltaleDNS are
-      # listed because the kubelet's cluster-dns points at the latter on this cluster.
+      # Resolvers the pods may send DNS to, with the port the resolver PODS listen on (the
+      # policy matches endpoints, not the Service). Both CoreDNS and TelltaleDNS are listed
+      # because the kubelet's cluster-dns points at TelltaleDNS on this cluster, whose pods
+      # answer on 5353 behind a :53 Service.
       endpoints:
         - namespace: kube-system
           labels:
             k8s-app: kube-dns
+          port: "53"
         - namespace: telltaledns
           labels: {}
+          port: "5353"
     # Extra Cilium egress rules appended to every sandbox's policy (e.g. an in-cluster registry).
     extraEgress: []
 
