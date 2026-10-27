@@ -120,7 +120,15 @@ done; the phase closes when the next image is rolled.
    `curl -sI https://api.github.com`.
 8. Record the results in `docs/verification.md`.
 
-## Phase 3: Managed Agents worker `in progress`
+## Phase 3: Managed Agents worker `done`
+
+**Done 2026-10-27, steps 4 and 5:** the owner created agent `agent_01Qr1kAQY2UFUQuMVJ6Z65rS`
+(Sonnet, `agent_toolset_20260401`) and a session targeting the environment. Worker log:
+`claimed work` at 01:32:06, `executing tool` / `dispatched tool` (`bash`, `is_error: false`,
+`posted: true`) at 01:34:42. `/workspace/hello.txt` in the worker pod reads
+`Linux claude-sandbox-worker-8f7b64b5c-wf5gf 6.8.0-138-generic …`: the homelab kernel, the
+pod's hostname. Pitfall recorded on the walkthrough: pass the literal session id to
+`events send`; an idle session is ended after 60 s.
 
 **Done 2026-10-27, steps 1 to 3:** the owner created the self-hosted environment and key in
 the Console and the Secret in the namespace; the worker was enabled in

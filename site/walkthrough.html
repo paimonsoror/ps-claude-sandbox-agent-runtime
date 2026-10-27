@@ -233,10 +233,15 @@ events:
       - type: text
         text: Write the output of "uname -a" to hello.txt in your working directory.
 YAML
+<span class="p">$</span> kubectl -n claude-sandbox logs deploy/claude-sandbox-worker | grep -v polling
+<span class="o">{"time":"2026-10-27T01:32:06Z","level":"INFO","msg":"claimed work","component":"work-poller","work_id":"sesn_…","work_type":"session"}
+{"time":"2026-10-27T01:34:42Z","level":"INFO","msg":"executing tool","component":"session-tool-runner","session_id":"sesn_…","tool":"bash","custom":false}
+{"time":"2026-10-27T01:34:42Z","level":"INFO","msg":"dispatched tool","session_id":"sesn_…","tool":"bash","is_error":false,"posted":true}</span>
 <span class="p">$</span> kubectl -n claude-sandbox exec deploy/claude-sandbox-worker -- cat /workspace/hello.txt
-<span class="o">Linux claude-sandbox-worker-… 6.8.0-138-generic #138-Ubuntu SMP … x86_64 GNU/Linux</span></div>
+<span class="o">Linux claude-sandbox-worker-8f7b64b5c-wf5gf 6.8.0-138-generic #138~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Fri Aug  7 13:43:15 UTC  x86_64 GNU/Linux</span></div>
+        <p class="muted">Pitfall seen on the first try: <code>ant beta:sessions create</code> prints the session id but sets no variable; passing an empty <code>--session-id</code> fails with "missing required session_id parameter". Paste the literal <code>sesn_…</code> id. The worker ends a session that stays idle for 60 seconds, so send the message soon after creating it.</p>
       </div>
-      <div class="card"><h3>What is true at this point</h3><p>The kernel string is the node's: the tool call executed in the homelab, inside the sandbox. The agent loop and the model stayed on Anthropic's side; only tool inputs and outputs crossed.</p></div>
+      <div class="card"><h3>What is true at this point</h3><p>The kernel string is the node's and the hostname is the worker pod's: the tool call executed in the homelab, inside the sandbox, 2 minutes 36 seconds after the claim and 90 seconds after the message. The agent loop and the model stayed on Anthropic's side; only tool inputs and outputs crossed.</p></div>
     </div>
   </div>
 </section>
