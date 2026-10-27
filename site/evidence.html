@@ -124,6 +124,7 @@
         <tr><td>enable</td><td>one line in <code>sandboxes/worker/values.yaml</code>; <code>claude-sandbox-worker</code> Synced, Healthy; pod Running on <code>sha-c7e6050</code></td></tr>
         <tr><td>log</td><td><code>starting ant beta:worker poll for environment env_…</code> then <code>{"level":"INFO","msg":"idle; polling for work","component":"work-poller"}</code></td></tr>
         <tr><td>policy</td><td>DNS to the two resolvers (53, 5353) and <code>api.anthropic.com</code> on 443; nothing else; no dropped flows in Hubble</td></tr>
+        <tr><td>unattended restart (image <code>sha-059ce25</code>)</td><td>both pods rolled; the workspace server reached <code>Connected · Capacity 1/8</code> with the same environment id and <code>homelab-gleaming-forest</code> restored, with nobody attached; <code>remoteDialogSeen: true</code> on the volume; worker polling again</td></tr>
         <tr><td>first session</td><td>claimed 01:32:06; <code>executing tool … "tool":"bash"</code> then <code>dispatched tool … "is_error":false,"posted":true</code> at 01:34:42; <code>/workspace/hello.txt</code> reads <code>Linux claude-sandbox-worker-8f7b64b5c-wf5gf 6.8.0-138-generic …</code>: the node's kernel, the pod's hostname</td></tr>
       </tbody>
     </table></div>

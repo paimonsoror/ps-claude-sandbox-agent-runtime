@@ -76,7 +76,10 @@ at the prompt since 01:21. Claude Code stores the answer as `remoteDialogSeen: t
 `~/.claude.json` (seen in the 2.1.311 binary, not documented); the key was absent on the
 volume. Fixed by seeding it on the volume and restarting, and by having the entrypoint seed
 it on every start. Two diagnostic servers run for 75 s in scratch directories (inside and
-outside srt) both reached the prompt, so srt was not the cause.
+outside srt) both reached the prompt, so srt was not the cause. Verified with image
+`sha-059ce25` (homelab-charts 5399345): an unattended restart came back `Connected`, same
+environment `env_01JB9mSQMGVEu56T6EH4op72`, session `homelab-gleaming-forest` restored. The
+machine appears at claude.ai/code as its own environment; new sessions are started there.
 
 Finding: srt's mount-point files for the denied shell startup files show up as untracked
 `.bashrc` and `.bash_profile` in `/workspace` while the server runs. The entrypoint now adds
