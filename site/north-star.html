@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>North star · Claude Sandbox Runtime</title>
 <meta name="description" content="The target a principal engineer described, decoded from primary sources and mapped layer by layer against what the homelab build is today.">
-<link rel="stylesheet" href="assets/site.css?v=20261027c">
-<script src="assets/site.js?v=20261027c"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027d">
+<script src="assets/site.js?v=20261027d"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -34,7 +34,7 @@
       </div>
       <span class="muted" id="viewnote" style="font-size:.85rem"></span>
     </div>
-    <div class="stage" id="ns-stage"><div class="caption">North star: a lifecycle API on top, swappable isolation underneath, the same image at the bottom.</div></div>
+    <div class="stage" id="ns-stage"><div class="caption">The target: a manager on top that creates a sandbox for each task, a choice of walls for each sandbox, and our sandbox image and rules at the bottom.</div></div>
   </div>
 </section>
 
@@ -91,13 +91,13 @@
 
   const F = window.Site.Flow;
   const spec = {
-    w: 1040, h: 380, nw: 150, nh: 54, label: "A control plane box above two substrate boxes, over the shared image",
+    w: 1100, h: 400, nw: 160, nh: 60, minWidth: 820, label: "A manager above two kinds of sandbox wall, over our sandbox image",
     nodes: [
-      { id: "sess", label: "sessions", sub: "Claude Code · Managed Agents", x: 100, y: 70, kind: "idp" },
-      { id: "cp", label: "control plane", sub: "agent-sandbox CRDs · warm pool · claims · router", x: 560, y: 70, w: 560 },
-      { id: "vm", label: "substrate A · microVM", sub: "Firecracker / libkrun / Kata · own kernel · snapshot", x: 380, y: 200, w: 300, h: 60 },
-      { id: "os", label: "substrate B · OpenShell", sub: "Landlock · seccomp · per-binary egress · credential injection", x: 740, y: 200, w: 300, h: 60 },
-      { id: "img", label: "image + policy document", sub: "srt + Claude Code + ant · non-root · read-only · settings.json", x: 560, y: 320, w: 660 },
+      { id: "sess", label: "Agent sessions", sub: "Claude Code, Managed Agents", x: 130, y: 80, kind: "idp" },
+      { id: "cp", label: "The manager (control plane)", sub: "creates, warms, routes and cleans up sandboxes", x: 640, y: 80, w: 560 },
+      { id: "vm", label: "Option A: a microVM", sub: "each sandbox gets its own kernel", x: 470, y: 215, w: 300, h: 62 },
+      { id: "os", label: "Option B: OpenShell", sub: "polices each program and its keys", x: 820, y: 215, w: 300, h: 62 },
+      { id: "img", label: "Our sandbox image and rules", sub: "sandbox-runtime, Claude Code, ant, the allowed-sites list", x: 640, y: 345, w: 660 },
     ],
     edges: [
       { id: "sess-cp", from: "sess", to: "cp" },
@@ -115,11 +115,11 @@
       ["cp", "vm", "os"].forEach(id => flow.setNode(id, "off"));
       ["cp-vm", "cp-os"].forEach(id => flow.setEdge(id, "dashed"));
       flow.setNode("img", "active"); flow.setNode("sess", "active-idp");
-      flow.caption("What we built: the image and policy document exist and are already shaped for a template; the control plane and the microVM substrate are dimmed because they are not there yet. Sessions reach the image through a Deployment and outbound connections instead of a claim and a router.");
+      flow.caption("What we built: the bottom layer, our sandbox image and rules, which a manager could use as-is. The manager and the stronger walls are dimmed because we have not built them yet. Today each sandbox is a long-running pod that ArgoCD creates from a file in Git.");
       document.getElementById("viewnote").textContent = "dimmed = not built";
     } else {
       flow.setNode("cp", "active"); flow.setNode("vm", "active-sn"); flow.setNode("os", "active-maestro");
-      flow.caption("North star: a lifecycle API on top, swappable isolation underneath, the same image at the bottom.");
+      flow.caption("The target: a manager on top that creates a sandbox for each task, a choice of walls for each sandbox, and our sandbox image and rules at the bottom.");
       document.getElementById("viewnote").textContent = "";
     }
   }
