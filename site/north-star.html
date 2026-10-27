@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>North star · Claude Sandbox Runtime</title>
+<meta name="description" content="The target a principal engineer described, decoded from primary sources and mapped layer by layer against what the homelab build is today.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">North star</span>
+    <h1>What was asked for, what was built, and the <span>distance</span> between them</h1>
+    <p class="quote" style="font-size:clamp(1.1rem,2.4vw,1.5rem);font-style:normal;color:var(--text)">"We basically are asking for an on-premise version of <span class="term" data-t="cp" tabindex="0" role="button">Google's control plane</span> around <span class="term" data-t="sub" tabindex="0" role="button">substrate</span>. But with <span class="term" data-t="vm" tabindex="0" role="button">Lambda microVM</span> with <span class="term" data-t="os" tabindex="0" role="button">OpenShell</span> as a <span class="term" data-t="prov" tabindex="0" role="button">backend provider</span>."<cite>a principal engineer, 2026-10-26</cite></p>
+    <p class="muted">Tap a term for what it names, from the primary sources.</p>
+    <div class="callout" id="termdetail"><h3 style="margin-top:0">Pick a term</h3><p class="muted">Its definition, source and where it shows up in our build appear here.</p></div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">The sentence, assembled</span>
+    <h2>A control plane on top, swappable isolation underneath, the same image at the bottom</h2>
+    <p>The <b>control plane</b> owns the life of a sandbox: declare it, keep warm capacity, bind a session to one, route to it, pause, snapshot, delete. The <b>substrates</b> own what a session can touch while it runs. The two providers named are not peers: the microVM is a <i>where</i> (a kernel boundary), OpenShell is a <i>what</i> (a policy and credential boundary inside the sandbox), and OpenShell can run on a microVM. No product ships the combination on-premises today.</p>
+    <div class="stage-controls">
+      <div class="toggle" role="group" aria-label="View">
+        <button class="on" data-v="ns">North star</button>
+        <button data-v="now">What we built</button>
+      </div>
+      <span class="muted" id="viewnote" style="font-size:.85rem"></span>
+    </div>
+    <div class="stage" id="ns-stage"><div class="caption">North star: a lifecycle API on top, swappable isolation underneath, the same image at the bottom.</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Layer by layer</span>
+    <h2>Why each difference exists</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Layer</th><th>North star</th><th>Today</th><th>Status</th><th>Why the difference</th></tr></thead>
+      <tbody>
+        <tr><td><b>Lifecycle API</b></td><td>Sandbox / Template / WarmPool / Claim CRDs and a controller</td><td>One Helm release per sandbox from an ApplicationSet; long-lived Deployments</td><td><span class="pill bad">missing</span></td><td>Two sandboxes, one owner: a directory per sandbox is the simplest thing that works and is already the shape a template would take. The CRDs are the next layer once per-session Managed Agents sandboxes are needed.</td></tr>
+        <tr><td><b>Session routing</b></td><td>Sandbox Router by header, scoped tokens</td><td>None; sandboxes only connect outbound and listen on nothing</td><td><span class="pill ok">not needed yet</span></td><td>Zero inbound surface was deliberate. A router matters when something calls into sandboxes.</td></tr>
+        <tr><td><b>Kernel boundary</b></td><td>Firecracker / libkrun / Kata microVM per session</td><td>Shared host kernel; pod user namespace + bubblewrap + seccomp</td><td><span class="pill bad">gap</span></td><td>Single bare-metal node without nested virtualisation. The chart already takes <code>isolation.runtimeClassName</code>; adding a microVM runtime is a hardware change. The user namespace is the compensating control.</td></tr>
+        <tr><td><b>In-sandbox policy engine</b></td><td>OpenShell supervisor: Landlock, seccomp notify, hot-reloadable per-binary egress, prover</td><td>Anthropic sandbox-runtime: bubblewrap binds, seccomp filter, proxy allowlist, live config over a control fd</td><td><span class="pill warn">different, same shape</span></td><td>srt is what Claude Code itself uses, one npm install, and knows Claude Code's configuration paths. OpenShell is 0.1.x, needs its gateway plus the agent-sandbox CRDs, and is not on Anthropic's provider list.</td></tr>
+        <tr><td><b>Credentials</b></td><td>"The agent never sees real credentials"; org key never reaches compute</td><td>The wrapped process reads its own login and a scoped GitHub token; the worker holds only a queue-scoped key</td><td><span class="pill warn">partial</span></td><td>Accepted residual for one owner; srt's credential masking behind TLS termination is the in-family path.</td></tr>
+        <tr><td><b>Egress</b></td><td>L7 with TLS inspection; VPC connector; FQDN policy</td><td>Two layers from one list: srt allowlist + Cilium toFQDNs on 443</td><td><span class="pill ok">equivalent by name</span></td><td>TLS inspection is the missing step (domain fronting residual).</td></tr>
+        <tr><td><b>Ephemerality</b></td><td>VM per session, destroyed or snapshotted</td><td>Workspaces persist by design; worker sessions share one /workspace</td><td><span class="pill warn">partial</span></td><td>A workspace is a developer's machine and should persist. The worker gap is plan phase 6.</td></tr>
+        <tr><td><b>Policy delivery</b></td><td>Gateway-owned global policy; admission policy in GKE</td><td>Values files in git, GitOps</td><td><span class="pill ok">fits</span></td><td>GitOps is the policy delivery for a homelab; an enterprise adds admission enforcement.</td></tr>
+        <tr><td><b>Warm start / snapshots</b></td><td>Warm pools, Pod Snapshots, snapshot boot</td><td>Container start plus a login wait</td><td><span class="pill ok">not needed yet</span></td><td>Becomes the main reason to adopt the control plane at scale.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The path</span>
+    <h2>Four steps, each useful on its own</h2>
+    <div class="phases">
+      <div class="phase reveal"><div><b>Keep today's chart for the owner's workspaces</b><p class="muted">They are long-lived developer machines; a lifecycle API adds nothing for them.</p></div><span class="pill ok">now</span></div>
+      <div class="phase reveal d1"><div><b>Control plane first: per-session Managed Agents sandboxes</b><p class="muted">Install kubernetes-sigs/agent-sandbox; replace the always-on worker with a poller that creates one SandboxClaim per work item from a SandboxTemplate built from this image; evaluate the warm pool. The on-premises half of the sentence with the substrate we already have.</p><p class="muted"><b>Gate:</b> a controller install; its own ADR and app-of-apps entry.</p></div><span class="pill warn">plan 6</span></div>
+      <div class="phase reveal d2"><div><b>Substrate second: a microVM RuntimeClass</b><p class="muted">When a KVM-capable node exists, add Kata or a libkrun-backed runtime to the template and run srt in weak mode inside it. This also closes the PSS restricted gap.</p><p class="muted"><b>Gate:</b> hardware with KVM.</p></div><span class="pill">later</span></div>
+      <div class="phase reveal d3"><div><b>Policy layer evaluation: OpenShell vs srt</b><p class="muted">Compare on the controls rows it would change: credential brokering, per-binary L7 egress, policy prover. Switch only if it wins there and Anthropic lists it as a provider; otherwise pursue srt's own credential masking and TLS termination.</p><p class="muted"><b>Gate:</b> an OpenShell release on Anthropic's provider list.</p></div><span class="pill">later</span></div>
+    </div>
+    <div class="callout" style="margin-top:24px"><p><b>One line for the principal engineer.</b> Same substrate shape (hardened image plus a policy document, deny-all egress, no credentials in git), the control plane and the kernel boundary still to come, each blocked by one concrete thing: a controller install, and a node with KVM.</p></div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+<script>
+(function () {
+  const T = {
+    cp: { h: "Google's control plane = kubernetes-sigs/agent-sandbox (GKE Agent Sandbox)", b: "A Kubernetes SIG project (Apache-2.0, v1.0.x) that calls itself \"a sandbox orchestrator\": you create a <code>Sandbox</code> custom resource and \"the controller manages the underlying runtime resources\". Extensions add <code>SandboxTemplate</code>, <code>SandboxWarmPool</code> (sub-second allocation on GKE) and <code>SandboxClaim</code>. A Sandbox Router fans HTTP to thousands of pods by <code>X-Sandbox-ID</code> without a Service each. GKE adds managed gVisor, an admission policy that rejects a Sandbox without <code>runtimeClassName: gvisor</code>, and Pod Snapshots. <b>In our build:</b> absent. One Application per sandbox directory. Planned as the layer for per-session Managed Agents sandboxes (ADR-0015)." },
+    sub: { h: "substrate = the isolation layer the control plane sits on", b: "agent-sandbox \"delegates low-level container isolation to secure 'Sandbox Runtimes' (like gVisor or Kata Containers)\" and swaps them only through <code>RuntimeClass</code>; it never uses the word substrate. Google does: <b>Agent Substrate on GKE</b> is a sibling project (pre-1.0, private GA) that runs Actors on a shared pool of warm Workers under gVisor or Cloud Hypervisor microVMs, snapshotting RAM and files to object storage. <b>In our build:</b> the substrate is pod user namespace + bubblewrap + seccomp on a shared kernel; the chart takes <code>isolation.runtimeClassName</code> for a sandboxed runtime." },
+    vm: { h: "Lambda microVM = AWS Lambda MicroVMs (Firecracker)", b: "Launched June 2026: \"serverless compute environments that provide VM-level isolation with full operating system capabilities... through Firecracker virtualization\". Build and snapshot an image, run, HTTPS endpoint, suspend/resume, terminate; up to 8 hours. AWS calls it \"a managed sandbox provider in self-hosted sandboxes for Claude Managed Agents\": one VM per session, \"Your Anthropic organization API key never reaches AWS compute\". Lambda cannot run on-premises; Firecracker, libkrun and Cloud Hypervisor can. <b>In our build:</b> no microVM; needs a KVM-capable node, then Kata or libkrun via RuntimeClass with srt in weak mode inside." },
+    os: { h: "OpenShell = NVIDIA and Red Hat's agent sandbox runtime", b: "\"The safe, private runtime for autonomous AI agents\" (Apache-2.0, 0.1.x, 10 NVIDIA + 3 Red Hat maintainers, planned for Red Hat AI). A Gateway (API, state, policy, providers), a Supervisor inside every sandbox that \"launches the agent as a restricted child process and enforces policy\", and a CLI. Landlock for files, seccomp user-notification for network, a fence that denies all egress except to the supervisor; deny-all per-binary network rules, hot-reloadable, with L7 middleware and TLS inspection, a Policy Advisor and a formal Policy Prover. \"The agent never sees real credentials.\" On Kubernetes its driver creates agent-sandbox <code>Sandbox</code> objects. <b>In our build:</b> Anthropic's sandbox-runtime fills this slot (ADR-0005); OpenShell is the evaluation candidate in ADR-0015 step 4." },
+    prov: { h: "backend provider = a pluggable place to run sessions", b: "Three things in the sentence have provider semantics at different depths: Anthropic's self-hosted sandboxes treat any worker serving the work queue as a provider (AWS, Cloudflare, Daytona, E2B, Modal, Vercel, GKE Agent Sandbox are listed); OpenShell has a documented gRPC <b>compute driver</b> contract (Docker, Podman, Kubernetes, libkrun VM); agent-sandbox has no provider API beyond <code>RuntimeClass</code>. On Kubernetes OpenShell runs <i>on top of</i> agent-sandbox, so \"OpenShell as a backend of the control plane\" is inverted from how it ships today. <b>In our build:</b> the chart's <code>kind</code> is the only provider-like switch; both kinds use the same image and policy." }
+  };
+  const det = document.getElementById("termdetail");
+  document.querySelectorAll(".term").forEach(el => {
+    const pick = () => { document.querySelectorAll(".term").forEach(x => x.classList.remove("sel")); el.classList.add("sel"); const t = T[el.dataset.t]; det.innerHTML = "<h3 style='margin-top:0'>" + t.h + "</h3><p>" + t.b + "</p>"; };
+    el.addEventListener("click", pick); el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+
+  const F = window.Site.Flow;
+  const spec = {
+    w: 1040, h: 380, nw: 150, nh: 54, label: "A control plane box above two substrate boxes, over the shared image",
+    nodes: [
+      { id: "sess", label: "sessions", sub: "Claude Code · Managed Agents", x: 100, y: 70, kind: "idp" },
+      { id: "cp", label: "control plane", sub: "agent-sandbox CRDs · warm pool · claims · router", x: 560, y: 70, w: 560 },
+      { id: "vm", label: "substrate A · microVM", sub: "Firecracker / libkrun / Kata · own kernel · snapshot", x: 380, y: 200, w: 300, h: 60 },
+      { id: "os", label: "substrate B · OpenShell", sub: "Landlock · seccomp · per-binary egress · credential injection", x: 740, y: 200, w: 300, h: 60 },
+      { id: "img", label: "image + policy document", sub: "srt + Claude Code + ant · non-root · read-only · settings.json", x: 560, y: 320, w: 660 },
+    ],
+    edges: [
+      { id: "sess-cp", from: "sess", to: "cp" },
+      { id: "cp-vm", from: "cp", to: "vm", kind: "v" },
+      { id: "cp-os", from: "cp", to: "os", kind: "v" },
+      { id: "vm-img", from: "vm", to: "img", kind: "v" },
+      { id: "os-img", from: "os", to: "img", kind: "v" },
+    ],
+  };
+  const stage = document.getElementById("ns-stage");
+  const flow = F.mount(stage, spec);
+  function view(v) {
+    flow.reset();
+    if (v === "now") {
+      ["cp", "vm", "os"].forEach(id => flow.setNode(id, "off"));
+      ["cp-vm", "cp-os"].forEach(id => flow.setEdge(id, "dashed"));
+      flow.setNode("img", "active"); flow.setNode("sess", "active-idp");
+      flow.caption("What we built: the image and policy document exist and are already shaped for a template; the control plane and the microVM substrate are dimmed because they are not there yet. Sessions reach the image through a Deployment and outbound connections instead of a claim and a router.");
+      document.getElementById("viewnote").textContent = "dimmed = not built";
+    } else {
+      flow.setNode("cp", "active"); flow.setNode("vm", "active-sn"); flow.setNode("os", "active-maestro");
+      flow.caption("North star: a lifecycle API on top, swappable isolation underneath, the same image at the bottom.");
+      document.getElementById("viewnote").textContent = "";
+    }
+  }
+  document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => { document.querySelectorAll(".toggle button").forEach(x => x.classList.remove("on")); b.classList.add("on"); view(b.dataset.v); }));
+  view("ns");
+})();
+</script>
+</body>
+</html>

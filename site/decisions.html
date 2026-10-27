@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Decisions · Claude Sandbox Runtime</title>
+<meta name="description" content="Sixteen Architecture Decision Records: context, decision, consequences and the alternatives that lost.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Decisions</span>
+    <h1>Sixteen decisions, each with what it <span>cost</span></h1>
+    <p class="lede">ADRs are immutable once accepted; a change is a new ADR that supersedes. Expand any card for the short form; the full text is in <code>docs/adr/</code> in the repository.</p>
+    <div class="filter" id="filter">
+      <button class="on" data-f="all">All</button>
+      <button data-f="isolation">Isolation</button>
+      <button data-f="delivery">Delivery</button>
+      <button data-f="identity">Identity &amp; secrets</button>
+      <button data-f="direction">Direction</button>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap" style="display:grid;gap:12px" id="adrs">
+    <div class="adr" id="adr-0001" data-t="delivery"><span class="num">0001</span><div><b>Record architecture decisions</b><p>One file per decision; superseded, never edited. The chart's README links back so decisions travel with the artifact.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>Operated for years by one person, extended by agents that were not there; a boundary whose reasoning is lost gets widened by the next convenient change.<h4>Lost</h4>A design doc edited in place; commit messages only.</div></details></div>
+    <div class="adr" id="adr-0002" data-t="delivery"><span class="num">0002</span><div><b>Target platform: the bare-metal k3s cluster</b><p>Ubuntu 22.04 with kernel 6.8, k3s 1.36.4, containerd 2.3.4, Cilium 1.20.1, ArgoCD 2.14.9: already meets the user-namespace requirements, so nothing is installed on the node. The repository-layout half was superseded by 0014.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Lost</h4>The TrueNAS lab VM with KIND (not the GitOps environment; KIND nodes complicate user-namespace pods).<h4>Consequence</h4>A single node: every sandbox shares one kernel; the isolation model compensates with user namespaces.</div></details></div>
+    <div class="adr" id="adr-0003" data-t="isolation"><span class="num">0003</span><div><b>Isolation: pod user namespace plus full-strength bubblewrap</b><p><code>hostUsers: false</code>, <code>procMount: Unmasked</code>, AppArmor and seccomp Unconfined on the container, uid 1000, all capabilities dropped, read-only root. srt strict mode; weak mode kept only as a flag.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Context</h4>A normal pod's masked /proc stops bubblewrap's procfs mount; upstream's weak mode "considerably weakens security". Kubernetes 1.36 makes Unmasked legal when the pod has a user namespace.<h4>Evidence</h4>Spike: strict mode passes every check as uid 1000 in the userns pod; fails at the mount in a plain pod.<h4>Consequence</h4>PSS <i>restricted</i> is not met on three fields; the user namespace is the compensating control.<h4>Lost</h4>Privileged pod (escape = root); weak mode (sees the container); gVisor/Kata (not installed, no nested virt).</div></details></div>
+    <div class="adr" id="adr-0004" data-t="delivery"><span class="num">0004</span><div><b>Two sandbox kinds in one chart</b><p><code>workspace</code> (Claude Code over Remote Control) and <code>managed-agents-worker</code> (ant). MCP gateway and Agent SDK kinds reserved, deferred.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>The owner's primary use is Claude Code itself; the worker gives Managed Agents sessions a homelab to execute in. Both share the pod contract, egress model and image.<h4>Lost</h4>Only an MCP exec gateway; separate charts per kind.</div></details></div>
+    <div class="adr" id="adr-0005" data-t="isolation"><span class="num">0005</span><div><b>One bubblewrap layer: srt wraps the whole process</b><p>MCP servers, hooks and file tools are inside the boundary. Claude Code's inner Bash sandbox is off; stacking it would need <code>allowNestedUserNamespaces</code>, which weakens the outer denies.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Context</h4>Anthropic's sandbox-environments guide lists the whole-process wrap as the option that isolates MCP servers and hooks; the inner sandbox excludes them. Remote Control server mode honours <code>sandbox.enabled</code> but the two cannot stack safely.<h4>Consequence</h4>Per-command violation annotations are lost; srt's debug log is the record. <code>isolation.wrap</code> keeps the inner-only option for comparison.<h4>Lost</h4>Inner sandbox only; both layers; CLAUDE_CODE_PROCESS_WRAPPER (not documented for srt).</div></details></div>
+    <div class="adr" id="adr-0006" data-t="isolation"><span class="num">0006</span><div><b>Egress in two layers from one list</b><p>The same domain list renders srt's allowlist with <code>strictAllowlist</code> and a CiliumNetworkPolicy with <code>toFQDNs</code> on 443 plus DNS; private ranges refused for allowed names; no ingress.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>srt only constrains what is inside bubblewrap; the entrypoint, the proxies and an escaped process see the pod's network. One source for both renderings so a mismatch fails loudly.<h4>Residual</h4>Domain fronting (no TLS termination); the DNS answers the policy trusts.<h4>Lost</h4>iptables init script (needs NET_ADMIN); CIDR-only NetworkPolicy (kept as the portable fallback); TLS-terminating proxy (enterprise step).</div></details></div>
+    <div class="adr" id="adr-0007" data-t="identity"><span class="num">0007</span><div><b>Credentials and secrets</b><p>claude.ai login persisted on the home volume (a <code>setup-token</code> cannot do Remote Control); the worker's environment key in an out-of-git Secret or via ExternalSecret; optional repo-scoped GitHub PAT; no ServiceAccount token; no org API key anywhere.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Context</h4>Remote Control "requires a full-scope login token"; the environment key is scoped to one queue and Anthropic asks for it to live in a secrets manager.<h4>Consequence</h4>A compromised workspace can spend the subscription and act toward the allowlisted repositories; it cannot reach Vault, the API server or other namespaces.<h4>Lost</h4>ANTHROPIC_API_KEY in the workspace (no Remote Control, full-scope key); baking a login into the image.</div></details></div>
+    <div class="adr" id="adr-0008" data-t="isolation"><span class="num">0008</span><div><b>Storage</b><p>local-path PVCs for <code>/workspace</code> and <code>/home/agent</code> (idmapped mounts; NFS excluded), emptyDir <code>/tmp</code> and <code>/mnt/memory</code>, read-only root, PVCs kept on removal.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Lost</h4>NFS (unsupported with user namespaces); StatefulSet (Deployment + named PVCs is simpler to prune per entry); writable root (an escaped process could edit the entrypoint).</div></details></div>
+    <div class="adr" id="adr-0009" data-t="delivery"><span class="num">0009</span><div><b>Access path: Remote Control first, no ingress</b><p>Server mode with worktrees, driven from claude.ai/code or the app. No Service, no ingress. Bootstrap over <code>kubectl exec</code>/<code>attach</code>; the pod has a TTY for the one-time confirmation.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>Zero inbound attack surface; the phone sees the sandbox as another machine.<h4>Lost</h4>code-server sharing the sandbox PVC (breaks the boundary); sshd in the pod; interactive mode under tmux (one session per process).</div></details></div>
+    <div class="adr" id="adr-0010" data-t="direction"><span class="num">0010</span><div><b>Managed Agents: always-on worker first</b><p>v1 in-process poller sharing <code>/workspace</code>, one environment per trust boundary. v2: per-session pods via <code>--on-work</code> Jobs or the agent-sandbox controller.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Residual</h4>Sessions of one environment can read what the previous one left; fine for one owner, not for a shared enterprise environment.<h4>Lost</h4>Per-session Jobs from day one (spawner RBAC, per-session Secrets); webhook-triggered worker (needs inbound).</div></details></div>
+    <div class="adr" id="adr-0011" data-t="delivery"><span class="num">0011</span><div><b>GitOps delivery through the app-of-apps</b><p>An Application entry with two pins (chart version, image sha tag), enabled after the first publish; Secrets out of git; no PSA labels (the namespace cannot be <i>restricted</i>). Amended by 0016.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Consequence</h4>Rolling srt or Claude Code is a build-arg PR plus a tag roll, the same shape the cluster already uses.</div></details></div>
+    <div class="adr" id="adr-0012" data-t="delivery"><span class="num">0012</span><div><b>Operations and observability</b><p>Logs to Loki; <code>debug.srt</code> toggle (off: it prints the commands); pgrep liveness probes; resource defaults; monthly pin review; runbook items.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Lost</h4>A sidecar tailing srt's violation store (there is no file to tail); no probes (a hung server would sit unnoticed).</div></details></div>
+    <div class="adr" id="adr-0013" data-t="direction"><span class="num">0013</span><div><b>Control framework alignment and enterprise porting</b><p>The controls matrix is maintained; three accepted gaps are the enterprise prerequisites (kernel per sandbox, credential brokering, signed audit); the invariants that must survive a port are listed and belong in admission policy.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Lost</h4>Picking one framework (controls are spread across sources); claiming PSS restricted via the user-namespace relaxation (false: Unmasked is still forbidden).</div></details></div>
+    <div class="adr" id="adr-0014" data-t="delivery"><span class="num">0014</span><div><b>Standalone repository and OCI chart</b><p>Everything in <code>ps-claude-sandbox-agent-runtime</code>; chart published to <code>ghcr.io/paimonsoror/charts</code> on <code>chart-v*</code> tags; homelab-charts keeps only the Application entry. Supersedes the layout in 0002; versioning rule amended by 0016.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Context</h4>The owner first chose the in-repository layout, then asked for a standalone project the same day, before anything was committed.</div></details></div>
+    <div class="adr" id="adr-0015" data-t="direction"><span class="num">0015</span><div><b>North star: a control plane over pluggable sandbox substrates</b><p>Adopt kubernetes-sigs/agent-sandbox as the lifecycle layer for per-session sandboxes; add a microVM RuntimeClass when a KVM node exists; evaluate OpenShell against srt on the controls rows it changes.</p></div><span class="pill warn">Proposed</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>The principal engineer's target decoded: Google's agent-sandbox control plane, Lambda-style microVMs and OpenShell as backends. What we built is the substrate layer; each missing piece is blocked by one concrete thing (a controller install; a KVM node).<h4>Lost</h4>Adopt OpenShell now (0.1.x, inverts the dependency); a custom controller; Deployments forever.</div></details></div>
+    <div class="adr" id="adr-0016" data-t="delivery"><span class="num">0016</span><div><b>Sandbox definitions as files, one per sandbox</b><p><code>sandboxes</code> is a map with per-kind defaults so any number of one-sandbox values files merge; a vendored chart also reads <code>sandboxes/*.yaml</code>; a fleet gets one ArgoCD Application per directory from an ApplicationSet. The chart stays at 0.1.0 until there are external consumers.</p></div><span class="pill ok">Accepted</span>
+      <details><summary>Short form</summary><div class="body"><h4>Why</h4>Helm cannot merge lists across values files, and an OCI chart cannot discover files a consumer adds. The first rollout failed exactly on a definition that omitted what defaults now fill.<h4>Lost</h4>A script generating values.yaml; the ApplicationSet files generator (flattens the file); umbrella charts per team.</div></details></div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+<script>
+  (function(){
+    const h = location.hash.replace("#",""); if (h) { const el = document.getElementById(h); if (el) { const d = el.querySelector("details"); if (d) d.open = true; el.scrollIntoView(); } }
+    document.querySelectorAll("#filter button").forEach(b => b.addEventListener("click", () => {
+      document.querySelectorAll("#filter button").forEach(x => x.classList.remove("on")); b.classList.add("on");
+      const f = b.dataset.f; document.querySelectorAll("#adrs .adr").forEach(a => { a.hidden = f !== "all" && a.dataset.t !== f; });
+    }));
+  })();
+</script>
+</body>
+</html>

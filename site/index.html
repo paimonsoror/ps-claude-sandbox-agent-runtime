@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude Sandbox Runtime</title>
+<meta name="description" content="Sandboxed execution environments for Claude agents on a Kubernetes homelab: Anthropic's sandbox-runtime at full strength inside pod user namespaces, delivered by GitOps, measured against published controls.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero">
+  <div class="wrap grid">
+    <div>
+      <span class="eyebrow">Architecture · design baseline 2026-10-26</span>
+      <h1>One image, <span>three boundaries</span>, no inbound port.</h1>
+      <p class="lede">Claude agents execute inside the homelab cluster: Claude Code itself, driven from a phone over Remote Control, and an Anthropic Managed Agents worker. Each runs under Anthropic's <code>sandbox-runtime</code> at full strength, inside a pod that is unprivileged on the host because of a user namespace, behind a network policy that allows the same short list of names the sandbox proxy allows. Delivered by ArgoCD from one chart, one file per sandbox.</p>
+      <div class="cta">
+        <a class="btn primary" href="architecture.html">Step through a command →</a>
+        <a class="btn" href="evidence.html">See the measurements</a>
+        <a class="btn" href="decisions.html">Read the decisions</a>
+      </div>
+      <p class="muted" style="margin-top:18px;font-size:.9rem">Every box in the animation is something that runs on the cluster today. Where a layer is still a gap, the <a href="controls.html">Controls</a> page says so and the <a href="north-star.html">North star</a> page says what closes it.</p>
+    </div>
+    <div>
+      <div class="stage" id="hero-stage"><div class="caption">Starting…</div></div>
+      <div class="stage-controls">
+        <button class="btn small" id="hero-replay">↻ Replay</button>
+        <span class="spacer"></span>
+        <span class="muted" style="font-size:.8rem">Loops automatically · from a message on your phone to a package fetched</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The problem</span>
+    <h2>An agent that can run commands needs a place to run them.</h2>
+    <div class="cards">
+      <div class="card reveal"><h3>A laptop is the wrong place</h3><p>Claude Code's Bash sandbox protects the laptop, but MCP servers, hooks and file tools still run on it, and the laptop has to stay open. Unattended work wants a machine that is nobody's daily driver.</p></div>
+      <div class="card reveal d1"><h3>A container is not a sandbox</h3><p>Root in an ordinary pod is root on the node. The runtime masks <code>/proc</code>, which stops bubblewrap from mounting its own; upstream's answer is a weaker mode that exposes the container's process table.</p></div>
+      <div class="card reveal d2"><h3>Egress is the exfiltration path</h3><p>Anything the agent reads can leave through any host it can reach. The sandbox proxy filters by name; nothing outside bubblewrap was filtered at all until the CNI policy was written from the same list.</p></div>
+      <div class="card reveal d3"><h3>It has to be measurable</h3><p>"Secure" is not a property a chart can claim. The build is measured against OWASP, NIST, Anthropic's own guidance, Pod Security Standards and MITRE ATLAS, with every gap named.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The decision, in one paragraph</span>
+    <h2>Opinionated on purpose</h2>
+    <div class="cards">
+      <div class="card reveal"><span class="n">ADR-0003</span><h3>User namespace, unmasked /proc</h3><p><code>hostUsers: false</code> makes pod root an unprivileged host uid, which is exactly the condition under which Kubernetes allows <code>procMount: Unmasked</code>. Full-strength bubblewrap follows. Proven on the node.</p><a href="evidence.html">Evidence →</a></div>
+      <div class="card reveal d1"><span class="n">ADR-0005</span><h3>One bubblewrap layer, around everything</h3><p>srt wraps the whole process, so MCP servers and hooks are inside the boundary too. Stacking Claude Code's inner Bash sandbox would require allowing nested user namespaces, which weakens the outer denies.</p><a href="architecture.html#layers">Layers →</a></div>
+      <div class="card reveal d2"><span class="n">ADR-0006</span><h3>One list, two enforcement points</h3><p>The same domain list renders srt's proxy allowlist and a Cilium policy with <code>toFQDNs</code> on 443 plus DNS. Private ranges are refused even for allowed names. No ingress exists.</p><a href="architecture.html#egress">Egress →</a></div>
+      <div class="card reveal d3"><span class="n">ADR-0007 · 0009</span><h3>Remote Control, no ingress</h3><p>The workspace is driven from claude.ai/code or the Claude app over a connection the pod opens outbound. The login lives on a volume; a token from <code>setup-token</code> cannot do Remote Control, so it is not used.</p><a href="plan.html">Runbook →</a></div>
+      <div class="card reveal"><span class="n">ADR-0016</span><h3>One file per sandbox</h3><p>Definitions are a map with per-kind defaults, so a sandbox is five lines and any number of files merge. An ApplicationSet turns a directory of them into one Application each.</p><a href="plan.html#fleet">Fleet layout →</a></div>
+      <div class="card reveal d1"><span class="n">ADR-0013 · 0015</span><h3>Gaps named, path drawn</h3><p>Three gaps an enterprise must close: a kernel per sandbox, credentials that never enter the sandbox, signed audit. The north star adds a control plane and microVM substrates on top of this same image.</p><a href="north-star.html">North star →</a></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Two kinds of sandbox</span>
+    <h2>Same image, same pod contract, different command</h2>
+    <div class="split">
+      <div class="card reveal"><span class="pill accent">kind: workspace</span><h3>Claude Code in the cluster</h3><p>The pod runs <code>srt -- claude remote-control</code> in server mode: up to eight sessions, each in its own git worktree, created on demand from the phone. The workspace volume is a clone of a repository; the home volume holds the login and the sessions.</p><p class="muted">Needs: a one-time <code>claude auth login</code> and a one-time confirmation over <code>kubectl attach</code>.</p></div>
+      <div class="card reveal d1"><span class="pill sn">kind: managed-agents-worker</span><h3>Managed Agents worker</h3><p>The pod runs <code>srt -- ant beta:worker poll</code>. It long-polls one environment's work queue with an environment key scoped to that queue, executes the bash and file tools inside the sandbox, and posts results back. The org API key never exists in the cluster.</p><p class="muted">Needs: a Secret with the environment id and key, created outside git.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Measured</span>
+    <h2>Six numbers carry the design</h2>
+    <p class="lede">Each is a measurement from the node or a verified render, not an estimate. The Evidence page has the raw output.</p>
+    <div class="stats">
+      <div class="stat reveal"><b>2889613312</b><span>the host uid that "root" inside the sandbox pod maps to: unprivileged on the node</span></div>
+      <div class="stat reveal d1"><b>4 pids</b><span>visible inside a strict sandbox, versus 18 (the whole container) in weak mode</span></div>
+      <div class="stat reveal d2"><b>0 node changes</b><span>kernel 6.8, k3s 1.36 and containerd 2.3 already meet the user-namespace requirements</span></div>
+      <div class="stat reveal d3"><b>11 objects</b><span>accepted by a server-side dry run of the strict rendering against the live API</span></div>
+      <div class="stat reveal"><b>1 host</b><span>in the base allowlist (api.anthropic.com); a workspace adds twelve, a worker adds none</span></div>
+      <div class="stat reveal d1"><b>16 ADRs</b><span>one per decision, each with alternatives and consequences; two superseded in part on the same day</span></div>
+    </div>
+    <p style="margin-top:18px"><a href="evidence.html">All measurements with their commands →</a></p>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script>
+(function () {
+  const F = window.Site.Flow;
+  const spec = {
+    w: 1040, h: 410, nw: 126, nh: 50, label: "From a message on the phone to a package fetched through the sandbox",
+    lanes: [["Owner", 90], ["Anthropic", 300], ["Pod", 540], ["Sandbox", 760], ["Upstream", 950]],
+    nodes: [
+      { id: "phone", label: "Phone / browser", sub: "claude.ai/code · Claude app", x: 90, y: 110, kind: "idp" },
+      { id: "laptop", label: "kubectl, once", sub: "auth login · attach", x: 90, y: 300, kind: "idp" },
+      { id: "relay", label: "Remote Control relay", sub: "outbound WebSocket", x: 300, y: 110, kind: "sn" },
+      { id: "api", label: "api.anthropic.com", sub: "inference", x: 300, y: 230, kind: "sn" },
+      { id: "queue", label: "Work queue", sub: "Managed Agents env", x: 300, y: 350, kind: "sn" },
+      { id: "pod", label: "Pod", sub: "hostUsers:false · uid 1000", x: 540, y: 60, kind: "group", w: 150 },
+      { id: "claude", label: "claude remote-control", sub: "server mode · worktrees", x: 540, y: 160, kind: "maestro" },
+      { id: "ant", label: "ant beta:worker", sub: "polls, runs tools", x: 540, y: 330, kind: "maestro" },
+      { id: "srt", label: "srt", sub: "proxy allowlist · write roots", x: 760, y: 110 },
+      { id: "bwrap", label: "bubblewrap", sub: "mount · pid · no net", x: 760, y: 230 },
+      { id: "cni", label: "Cilium policy", sub: "toFQDNs :443 · DNS", x: 760, y: 350 },
+      { id: "npm", label: "registry.npmjs.org", sub: "allowed name", x: 950, y: 160 },
+      { id: "evil", label: "example.com", sub: "not listed", x: 950, y: 300, kind: "key" },
+    ],
+    edges: [
+      { id: "phone-relay", from: "phone", to: "relay" },
+      { id: "laptop-claude", from: "laptop", to: "claude", kind: "c", bend: -40, dashed: true },
+      { id: "relay-claude", from: "relay", to: "claude", kind: "c", bend: 0 },
+      { id: "claude-api", from: "claude", to: "api", kind: "back", dashed: true },
+      { id: "queue-ant", from: "queue", to: "ant", kind: "c", bend: 0, dashed: true },
+      { id: "claude-srt", from: "claude", to: "srt", kind: "c", bend: 0 },
+      { id: "srt-bwrap", from: "srt", to: "bwrap", kind: "v" },
+      { id: "bwrap-cni", from: "bwrap", to: "cni", kind: "v" },
+      { id: "cni-npm", from: "cni", to: "npm", kind: "c", bend: -40 },
+      { id: "cni-evil", from: "cni", to: "evil", kind: "c", bend: 0, dashed: true },
+      { id: "ant-srt", from: "ant", to: "srt", kind: "c", bend: -80, dashed: true },
+    ],
+  };
+  const stage = document.getElementById("hero-stage");
+  const flow = F.mount(stage, spec);
+  const steps = [
+    { caption: "0 · One-time bootstrap: `claude auth login` over kubectl exec stores the owner's claude.ai login on the home volume; one `kubectl attach` answers the Remote Control confirmation.", nodes: { laptop: "active-idp", pod: "active" }, packets: [{ edge: "laptop-claude", label: "login", cls: "idp" }], after: { claude: "active-maestro" } },
+    { caption: "1 · The server opened an outbound WebSocket to Anthropic's Remote Control relay when it started. Nothing on the LAN accepts connections; the pod has no Service and the policy denies all ingress.", packets: [{ edge: "relay-claude", reverse: true, label: "register", cls: "maestro" }], after: { relay: "active-sn" } },
+    { caption: "2 · You send a message from the phone: `npm view left-pad version`. The model answers with a Bash tool call; in default permission mode the app asks you first. bypassPermissions is disabled by managed settings.", nodes: { phone: "active-idp" }, packets: [{ edge: "phone-relay", label: "message", cls: "idp" }, { edge: "relay-claude", label: "turn", cls: "sn" }], after: { claude: "active-maestro" } },
+    { caption: "3 · Inference goes to api.anthropic.com, the one name every sandbox may reach.", packets: [{ edge: "claude-api", label: "messages", cls: "sn" }, { edge: "claude-api", reverse: true, label: "tool_use", cls: "sn" }], after: { api: "active-sn" } },
+    { caption: "4 · The whole server already runs inside srt, so the shell it spawns inherits the sandbox: writable /workspace, /home/agent and /tmp only, a fresh /proc with four pids, no network interface.", packets: [{ edge: "claude-srt", label: "spawn shell" }], after: { srt: "active" } },
+    { caption: "5 · bubblewrap: own mount namespace with read-only binds for every deny, --unshare-net, --unshare-pid, the seccomp helper refusing Unix sockets and nested namespaces.", packets: [{ edge: "srt-bwrap", label: "bwrap" }], after: { bwrap: "active" } },
+    { caption: "6 · npm honours HTTPS_PROXY, which points at a Unix socket bridged to srt's proxy outside bubblewrap. The proxy checks registry.npmjs.org against the allowlist and refuses private addresses for any name.", packets: [{ edge: "bwrap-cni", label: "CONNECT :443" }], after: { cni: "active" } },
+    { caption: "7 · The CNI policy checks again: DNS went to the cluster resolvers, the destination matches a toFQDNs entry on 443. The flow leaves. A name that is not listed never gets this far.", parallel: true, packets: [{ edge: "cni-npm", label: "allowed", cls: "ok" }, { edge: "cni-evil", label: "403", cls: "bad", ms: 700 }], after: { npm: "ok", evil: "bad" } },
+    { caption: "8 · Output returns to the session and to your phone. A Managed Agents worker runs the same path with `ant` in place of Claude Code, claiming work from its environment's queue instead of a relay.", packets: [{ edge: "cni-npm", reverse: true, label: "1.3.0", cls: "ok" }, { edge: "queue-ant", label: "work item", cls: "sn" }], after: { ant: "active-maestro", queue: "active-sn" }, hold: 1600 },
+  ];
+  const p = F.player(flow, steps, { loop: true, replayEl: document.getElementById("hero-replay") });
+  p.play(0);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plan &amp; runbook · Claude Sandbox Runtime</title>
+<meta name="description" content="The phased plan with its human steps, the fleet layout, and the runbook for first start, login renewal, key rotation, reading denials and recovery.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Plan &amp; runbook</span>
+    <h1>Phases with their <span>human steps</span></h1>
+    <p class="lede">Each phase ends in something verifiable on the cluster. Status reflects the repository on 2026-10-26; the full plan with its verification log is <code>docs/plan.md</code>, the runbook is <code>docs/runbook.md</code>.</p>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <div class="phases">
+      <div class="phase reveal"><div><b>Feasibility</b><ul><li>Probe the node: kernel, k3s, containerd, sysctls, storage, ArgoCD</li><li>Spike two pods in <code>testing</code>; delete them</li><li>Confirm Claude Code facts: Remote Control needs a login, honours <code>sandbox.enabled</code>, needs a TTY once; trust is pre-seedable</li></ul></div><span class="pill ok">done</span></div>
+      <div class="phase reveal d1"><div><b>Image and chart</b><ul><li>Chart lints and renders in strict, weak, packaged-file and fleet shapes</li><li>Server-side dry run accepted all 11 objects</li><li>Image <code>sha-50409b3</code> and chart 0.1.0 published to ghcr.io, both public</li><li>First rollout failed on a definition without defaults; fixed by ADR-0016, chart republished, repo-server restarted</li></ul></div><span class="pill ok">done</span></div>
+      <div class="phase reveal d2"><div><b>First workspace</b><ul><li>ApplicationSet cutover merged; <code>claude-sandbox-homelab</code> Synced; pod Running; repository cloned through the egress policy</li><li><code>claude auth login</code> over <code>kubectl exec</code> (paste-code flow)</li><li>Answer the Remote Control confirmation over <code>kubectl attach</code></li><li>Open the session from the phone; run the boundary probes; record in <code>docs/plan.md</code></li></ul></div><span class="pill warn">in progress</span></div>
+      <div class="phase reveal d3"><div><b>Managed Agents worker</b><ul><li>Create the environment and key in the Console</li><li>Create the <code>claude-sandbox-managed-agents</code> Secret</li><li>Set <code>enabled: true</code> in <code>sandboxes/worker/values.yaml</code>; confirm <code>workers_polling ≥ 1</code></li><li>Run a session that writes hello.txt; verify the boundary</li></ul></div><span class="pill">todo</span></div>
+      <div class="phase reveal"><div><b>Hardening</b><ul><li>LAN probe confirming <code>deniedResolvedAddresses</code></li><li>Grafana panel for srt denials in Loki; one day of <code>debug.srt</code>; trim the allowlist</li><li>ExternalSecret for the worker key via Vault</li></ul></div><span class="pill">todo</span></div>
+      <div class="phase reveal d1"><div><b>Browser terminal (optional)</b><ul><li>ttyd or code-server behind Authentik; a new ADR amending 0009</li></ul></div><span class="pill">later</span></div>
+      <div class="phase reveal d2"><div><b>Per-session sandboxes</b><ul><li>Poller with <code>--on-work</code> spawning Jobs, or the agent-sandbox controller with a SandboxTemplate from this image</li></ul></div><span class="pill">later</span></div>
+      <div class="phase reveal d3"><div><b>Portability</b><ul><li>Chart on another cluster from the registry; RuntimeClass + weak mode for gVisor/Kata</li></ul></div><span class="pill">later</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="fleet">
+  <div class="wrap">
+    <span class="eyebrow">Fleet layout</span>
+    <h2>Adding a sandbox is adding a directory</h2>
+    <div class="split">
+      <div>
+        <p>In <code>homelab-charts</code> the ApplicationSet watches <code>manifests/claude-sandboxes/sandboxes/*</code>. Each directory holds a values file with one definition; <code>common.yaml</code> carries the image tag and the shared settings. One Application per directory, each with its own sync status and history; directories map to CODEOWNERS (ADR-0016).</p>
+<pre class="tree"><span class="dir">manifests/claude-sandboxes/</span>
+  applicationset.yaml
+  common.yaml                      <span class="gen">image.tag · fullnameOverride · serviceAccount.create: false</span>
+  <span class="dir">sandboxes/</span>
+    <span class="dir">homelab/</span>values.yaml              <span class="edit">kind: workspace · repo · spawn: worktree</span>
+    <span class="dir">worker/</span>values.yaml               <span class="edit">kind: managed-agents-worker · enabled: false</span></pre>
+      </div>
+      <div>
+        <p>A definition states its <code>kind</code> and what differs from the kind's defaults. Lists replace; <code>extraAllowedDomains</code> are appended.</p>
+<pre><code>sandboxes:
+  homelab:
+    kind: workspace
+    repo: https://github.com/paimonsoror/homelab-charts.git
+    extraAllowedDomains: ["*.sororlab.dev:443"]
+    remoteControl:
+      spawn: worktree
+      permissionMode: default</code></pre>
+        <p class="muted">To roll the image for every sandbox, edit <code>common.yaml</code>. To roll the chart, <code>targetRevision</code> in the ApplicationSet. While the chart stays at 0.1.0, a republish moves the <code>chart-v0.1.0</code> tag and needs a hard refresh or a repo-server restart.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Runbook</span>
+    <h2>The operations that will actually happen</h2>
+    <div class="cards">
+      <div class="card reveal"><h3>First start of a workspace</h3><pre><code>kubectl -n claude-sandbox logs -f deploy/claude-sandbox-homelab
+kubectl -n claude-sandbox exec -it deploy/claude-sandbox-homelab -- claude auth login
+kubectl -n claude-sandbox attach -it deploy/claude-sandbox-homelab
+#  "Enable Remote Control? (y/n)" -> y ; detach: Ctrl-P Ctrl-Q</code></pre><p class="muted">Both answers are remembered on the home volume.</p></div>
+      <div class="card reveal d1"><h3>Login expired</h3><pre><code>kubectl -n claude-sandbox exec -it deploy/claude-sandbox-homelab -- claude auth login
+kubectl -n claude-sandbox rollout restart deploy/claude-sandbox-homelab</code></pre><p class="muted">Claude Code warns three days before expiry inside sessions.</p></div>
+      <div class="card reveal d2"><h3>Rotate the environment key</h3><pre><code>kubectl -n claude-sandbox create secret generic claude-sandbox-managed-agents \
+  --from-literal=ANTHROPIC_ENVIRONMENT_ID=env_... \
+  --from-literal=ANTHROPIC_ENVIRONMENT_KEY=... \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n claude-sandbox rollout restart deploy/claude-sandbox-worker</code></pre></div>
+      <div class="card reveal d3"><h3>Read what the sandbox denied</h3><pre><code>{namespace="claude-sandbox"} |~ "blocked|denied|violation"
+kubectl -n cilium exec ds/cilium -- hubble observe \
+  --namespace claude-sandbox --verdict DROPPED --last 50</code></pre><p class="muted">srt denials need <code>debug.srt: true</code>; Hubble drops need nothing.</p></div>
+      <div class="card reveal"><h3>Verify the boundary from a session</h3><pre><code>curl -sI https://example.com      # 403: not allowlisted
+curl -sI http://10.43.0.1         # blocked: guard + CNI
+touch /etc/x                      # read-only root
+echo x >> ~/.bashrc               # mandatory write deny
+unshare -Ur true                  # nested userns refused
+cat /proc/self/uid_map            # 0 &lt;host uid&gt; 65536</code></pre></div>
+      <div class="card reveal d1"><h3>Stop everything</h3><pre><code>kubectl -n claude-sandbox scale deploy --all --replicas=0</code></pre><p class="muted">Then revoke the environment key in the Console and <code>/logout</code> a session, or delete <code>.credentials.json</code> on the home volume.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+</body>
+</html>

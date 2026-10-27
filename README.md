@@ -23,7 +23,7 @@ Two kinds of sandbox come out of one Helm chart:
 | [`docs/controls-matrix.md`](docs/controls-matrix.md) | the build measured against published agent-sandbox controls, with enterprise porting notes |
 | [`docs/north-star.md`](docs/north-star.md) | the control-plane-over-substrates target, decoded and compared |
 | [`docs/spike`](docs/spike) | the feasibility evidence from the cluster |
-| [`docs/sandbox-explainer.html`](docs/sandbox-explainer.html), [`docs/north-star.html`](docs/north-star.html) | interactive pages explaining the build |
+| [`site/`](site/) | the documentation site, published to GitHub Pages at https://paimonsoror.github.io/ps-claude-sandbox-agent-runtime/ (overview with the animated request flow, architecture walkthroughs, evidence, decisions, controls, north star, plan and runbook, research) |
 | [`deploy/argocd`](deploy/argocd) | the app-of-apps entry |
 | `sandbox-runtime/` | upstream, as a submodule pinned to the commit the design was read against |
 

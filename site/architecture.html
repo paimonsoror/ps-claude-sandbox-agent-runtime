@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture · Claude Sandbox Runtime</title>
+<meta name="description" content="The layers of the Claude sandbox on the homelab cluster, and three walkthroughs: an allowed command, a Managed Agents tool call, and an attempt that every layer refuses.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Architecture</span>
+    <h1>What each layer <span>stops</span>, and what it cannot</h1>
+    <p class="lede">Three boundaries stack: the pod, the sandbox runtime, and the network policy. Pick a scenario and step through which layer decides at each hop. The narrative on the right says what the step relies on and where that is recorded.</p>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <div class="stage-controls">
+      <div class="toggle" role="group" aria-label="Scenario">
+        <button class="on" data-script="allowed">A command fetches a package</button>
+        <button data-script="worker">A Managed Agents tool call</button>
+        <button data-script="escape">Code tries to get out</button>
+      </div>
+      <button class="btn small" id="prev">← Back</button>
+      <button class="btn small" id="next">Next →</button>
+      <button class="btn small" id="replay">↻ Replay</button>
+    </div>
+    <div class="walk">
+      <div>
+        <div class="stage" id="rt-stage"><div class="caption">Starting…</div></div>
+        <div class="steps" id="rt-steps"></div>
+        <div class="progress" id="rt-progress"><i></i></div>
+      </div>
+      <div class="narrative">
+        <span class="who" id="rt-who">Scenario</span>
+        <h3 id="rt-title">Select a scenario</h3>
+        <p id="rt-text" class="muted"></p>
+        <div class="log" id="rt-log"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="layers">
+  <div class="wrap">
+    <span class="eyebrow">Layers</span>
+    <h2>What sits where</h2>
+    <div class="layers">
+      <div class="layer reveal"><div class="name">Delivery<small>ArgoCD · one chart · one file per sandbox</small></div><div class="chips"><span class="chip">OCI chart 0.1.0</span><span class="chip">image sha-&lt;short&gt;</span><span class="chip">ApplicationSet: directory → Application</span><span class="chip">common.yaml for the fleet</span></div></div>
+      <div class="layer reveal"><div class="name">Network policy<small>CiliumNetworkPolicy per sandbox</small></div><div class="chips"><span class="chip">ingress: none</span><span class="chip">DNS to cluster resolvers (proxied)</span><span class="chip">TCP/443 to toFQDNs from the same list</span><span class="chip bad">no cluster, no LAN</span></div></div>
+      <div class="layer reveal"><div class="name">Pod<small>unprivileged on the host</small></div><div class="chips"><span class="chip">hostUsers: false</span><span class="chip">procMount: Unmasked</span><span class="chip">uid 1000 · drop ALL</span><span class="chip">read-only root</span><span class="chip">no ServiceAccount token</span><span class="chip">AppArmor/seccomp Unconfined (srt re-applies)</span></div></div>
+      <div class="layer reveal"><div class="name">Sandbox runtime<small>srt, Anthropic</small></div><div class="chips"><span class="chip">allowedDomains · strictAllowlist</span><span class="chip">deniedResolvedAddresses: private ranges</span><span class="chip">allowWrite: /workspace, /home/agent, /tmp</span><span class="chip">mandatory denies: .git/hooks, .mcp.json, rc files</span><span class="chip">HTTP + SOCKS proxies on Unix sockets</span></div></div>
+      <div class="layer reveal"><div class="name">bubblewrap<small>the namespaces</small></div><div class="chips"><span class="chip">own mount ns · ro binds</span><span class="chip">--unshare-net</span><span class="chip">--unshare-pid · fresh /proc</span><span class="chip">seccomp: no Unix sockets, no nested namespaces</span></div></div>
+      <div class="layer reveal"><div class="name">Agent<small>what actually runs</small></div><div class="chips"><span class="chip maestro">claude remote-control (server, worktrees)</span><span class="chip maestro">ant beta:worker poll</span><span class="chip sn">bypassPermissions disabled</span><span class="chip sn">DISABLE_UPDATES · DISABLE_TELEMETRY</span></div></div>
+      <div class="layer reveal"><div class="name">Identity &amp; secrets<small>who the sandbox is</small></div><div class="chips"><span class="chip idp">claude.ai login on the home volume</span><span class="chip key">environment key, queue-scoped</span><span class="chip key">GitHub PAT, repo-scoped, optional</span><span class="chip">no org API key anywhere</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="egress">
+  <div class="wrap">
+    <span class="eyebrow">Egress</span>
+    <h2>One list, rendered twice</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Where</th><th>Decides on</th><th>What it stops</th><th>What it cannot</th></tr></thead>
+      <tbody>
+        <tr><td><b>srt proxy</b> <span class="pill accent">inside the pod, outside bubblewrap</span></td><td>the hostname the client asks for, per request; unlisted hosts denied (strictAllowlist); allowed names resolved once and refused if they land in loopback, link-local, the node's own addresses or the private ranges</td><td>any destination the agent names that is not on the list; UDP, QUIC and ICMP entirely (no network namespace)</td><td>domain fronting: it does not terminate TLS, so an allowed host that fronts another is not seen (documented upstream residual)</td></tr>
+        <tr><td><b>Cilium policy</b> <span class="pill sn">at the CNI</span></td><td>the resolved address of a name the DNS proxy saw, on TCP/443; DNS only to the cluster resolvers</td><td>anything outside bubblewrap that is not the proxy's own egress: the entrypoint's clone, an escaped process, srt itself if misconfigured; all ingress</td><td>content; a listed name carries anything on 443</td></tr>
+        <tr><td><b>Both forbidden</b> <span class="pill bad">never on the list</span></td><td colspan="3">cluster Services, the API server, the LAN, the NAS, Vault, ArgoCD. A wildcard entry is refused at the proxy for private addresses and never matches a cluster name at the CNI.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout">
+      <p><b>Why two layers from one list.</b> The proxy is where per-request, reason-bearing denials happen and where a future per-command allow list would attach. The CNI policy is the backstop with coarser granularity for everything in the pod that is not inside bubblewrap. Rendering both from the chart's single <code>allowedDomains</code> means a name allowed in one place and missing in the other fails loudly instead of silently widening. (ADR-0006)</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Why not the obvious alternatives</span>
+    <h2>Three things that look simpler and are not</h2>
+    <div class="cards">
+      <div class="card reveal"><h3>A privileged pod</h3><p>Strict bubblewrap works there too, but an escape is root on the node. The user namespace gives strict mode without that, and the spike shows the pod's root is host uid 2889613312.</p></div>
+      <div class="card reveal d1"><h3>Claude Code's own Bash sandbox, inside srt</h3><p>Bubblewrap inside bubblewrap needs <code>allowNestedUserNamespaces</code>, and upstream says to treat the outer write denies as not holding under it. One layer around everything is stronger than two that undo each other. (ADR-0005)</p></div>
+      <div class="card reveal d2"><h3>An iptables firewall in the pod</h3><p>The devcontainer pattern needs NET_ADMIN and NET_RAW inside the container. A policy object outside the pod needs no capability and cannot be edited by what it confines. (ADR-0006)</p></div>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script>
+(function () {
+  const F = window.Site.Flow, log = window.Site.log;
+  const spec = {
+    w: 1040, h: 400, nw: 126, nh: 50, label: "A request crossing the pod, the sandbox runtime and the network policy",
+    lanes: [["Caller", 90], ["Agent", 300], ["srt", 520], ["Boundaries", 740], ["Upstream", 950]],
+    nodes: [
+      { id: "phone", label: "Phone", sub: "Remote Control session", x: 90, y: 100, kind: "idp" },
+      { id: "queue", label: "Work queue", sub: "environment env_…", x: 90, y: 300, kind: "sn" },
+      { id: "claude", label: "Claude Code", sub: "tool call: Bash", x: 300, y: 100, kind: "maestro" },
+      { id: "ant", label: "ant worker", sub: "tool call: bash", x: 300, y: 300, kind: "maestro" },
+      { id: "shell", label: "shell in bwrap", sub: "uid 1000 · no caps", x: 520, y: 200 },
+      { id: "fs", label: "filesystem binds", sub: "ro root · write roots", x: 740, y: 70 },
+      { id: "proxy", label: "srt proxy", sub: "allowlist · resolved-address guard", x: 740, y: 200 },
+      { id: "cni", label: "Cilium policy", sub: "toFQDNs :443", x: 740, y: 330 },
+      { id: "up", label: "registry.npmjs.org", sub: "allowed", x: 950, y: 150 },
+      { id: "lan", label: "192.168.3.3 (NAS)", sub: "private range", x: 950, y: 300, kind: "key" },
+    ],
+    edges: [
+      { id: "phone-claude", from: "phone", to: "claude" },
+      { id: "queue-ant", from: "queue", to: "ant", dashed: true },
+      { id: "claude-shell", from: "claude", to: "shell", kind: "c", bend: 0 },
+      { id: "ant-shell", from: "ant", to: "shell", kind: "c", bend: 0 },
+      { id: "shell-fs", from: "shell", to: "fs", kind: "c", bend: -40 },
+      { id: "shell-proxy", from: "shell", to: "proxy" },
+      { id: "proxy-cni", from: "proxy", to: "cni", kind: "v" },
+      { id: "cni-up", from: "cni", to: "up", kind: "c", bend: -60 },
+      { id: "cni-lan", from: "cni", to: "lan", kind: "c", bend: 0, dashed: true },
+      { id: "proxy-lan", from: "proxy", to: "lan", kind: "c", bend: 30, dashed: true },
+    ],
+  };
+  const stage = document.getElementById("rt-stage");
+  const flow = F.mount(stage, spec);
+  const scripts = {
+    allowed: { who: "Workspace · allowed", title: "npm view left-pad version", text: "A command whose only network need is a listed registry.", steps: [
+      { caption: "1 · The owner approves the Bash tool call on the phone (default permission mode).", nodes: { phone: "active-idp" }, packets: [{ edge: "phone-claude", label: "approve", cls: "idp" }], after: { claude: "active-maestro" }, log: ["<span class='k'>permissions</span> defaultMode=default · bypassPermissions <span class='bad'>disabled</span> by /etc/claude-code/managed-settings.json", "<span class='dim'>ADR-0005 · ADR-0009</span>"] },
+      { caption: "2 · Claude Code spawns the shell. The server already runs inside srt, so the child inherits every namespace and bind.", packets: [{ edge: "claude-shell", label: "sh -c", cls: "maestro" }], after: { shell: "active" }, log: ["<span class='k'>bwrap</span> --unshare-net --unshare-pid --proc /proc --ro-bind / / --bind /workspace /workspace …", "pids visible: <span class='ok'>4</span> · caps: <span class='ok'>none</span>", "<span class='dim'>spike 2026-10-26, userns pod, uid 1000</span>"] },
+      { caption: "3 · npm writes its cache under /home/agent/.npm: an allowed write root. Anything outside the three roots is a read-only bind.", packets: [{ edge: "shell-fs", label: "write ~/.npm" }], after: { fs: "ok" }, log: ["<span class='k'>allowWrite</span> /workspace /home/agent /tmp", "<span class='k'>mandatory deny</span> .git/hooks .git/config .mcp.json .claude/commands .claude/agents .bashrc …", "<span class='dim'>ADR-0005 · ADR-0008</span>"] },
+      { caption: "4 · npm honours HTTPS_PROXY and asks srt's proxy for registry.npmjs.org. Listed. The name resolves to a public address, so the guard passes.", packets: [{ edge: "shell-proxy", label: "CONNECT" }], after: { proxy: "ok" }, log: ["<span class='k'>allowedDomains</span> api.anthropic.com claude.ai … registry.npmjs.org *.npmjs.org", "<span class='k'>deniedResolvedAddresses</span> 10/8 172.16/12 192.168/16 100.64/10", "<span class='ok'>allow</span> registry.npmjs.org:443"] },
+      { caption: "5 · The pod's egress policy sees a flow to an address the DNS proxy resolved for a toFQDNs entry, on 443. Allowed.", packets: [{ edge: "proxy-cni", label: "SYN :443" }, { edge: "cni-up", label: "TLS", cls: "ok" }], after: { cni: "ok", up: "ok" }, log: ["<span class='k'>CiliumNetworkPolicy</span> claude-sandbox-homelab", "egress: toFQDNs matchName registry.npmjs.org · toPorts 443/TCP", "<span class='ok'>forwarded</span>"] },
+      { caption: "6 · The answer flows back through the proxy to the shell, to Claude Code, to the phone.", packets: [{ edge: "cni-up", reverse: true, label: "200", cls: "ok" }, { edge: "shell-proxy", reverse: true, label: "1.3.0", cls: "ok" }, { edge: "phone-claude", reverse: true, label: "output", cls: "ok" }], hold: 1500, log: ["left-pad@<span class='ok'>1.3.0</span>", "<span class='dim'>no violation recorded</span>"] },
+    ]},
+    worker: { who: "Managed Agents · worker", title: "A session asks the worker to run uname -a > hello.txt", text: "The same boundary, a different caller: there is no human on the phone, only an environment key scoped to one queue.", steps: [
+      { caption: "1 · The worker long-polls its environment's work queue over outbound HTTPS and claims the session.", nodes: { queue: "active-sn" }, packets: [{ edge: "queue-ant", label: "claim", cls: "sn" }], after: { ant: "active-maestro" }, log: ["<span class='k'>ant</span> beta:worker poll --workdir /workspace --log-format json", "auth: <span class='key'>ANTHROPIC_ENVIRONMENT_KEY</span> (queue-scoped; the org API key never enters the cluster)", "<span class='dim'>ADR-0007 · ADR-0010</span>"] },
+      { caption: "2 · The session's bash tool call runs in the worker's process, which srt already wraps.", packets: [{ edge: "ant-shell", label: "bash", cls: "maestro" }], after: { shell: "active" }, log: ["<span class='k'>allowWrite</span> /workspace /home/agent /tmp /mnt/memory", "<span class='dim'>memory stores on an emptyDir, discarded on restart</span>"] },
+      { caption: "3 · hello.txt lands in /workspace, the only place the session's files may go.", packets: [{ edge: "shell-fs", label: "write hello.txt" }], after: { fs: "ok" }, log: ["/workspace/hello.txt ← <span class='ok'>Linux homelab 6.8.0-138-generic …</span>"] },
+      { caption: "4 · The result is posted back. The worker's allowlist is one name: api.anthropic.com.", packets: [{ edge: "shell-proxy", label: "POST result", cls: "sn" }, { edge: "proxy-cni", label: ":443", cls: "sn" }], after: { proxy: "ok", cni: "ok" }, log: ["<span class='k'>allowedDomains</span> api.anthropic.com", "<span class='ok'>allow</span> api.anthropic.com:443"] },
+      { caption: "5 · Sessions of this environment share /workspace in v1; one pod per session is the planned next step with the agent-sandbox controller.", hold: 1600, log: ["<span class='dim'>ADR-0010 v2 · ADR-0015 step 2</span>", "<span class='dim'>per-session isolation is a named gap in the controls matrix</span>"] },
+    ]},
+    escape: { who: "Hostile · refused", title: "A cloned repo's postinstall tries to read the NAS and phone home", text: "Each hop is refused by a different layer; none of them relies on the previous one holding.", steps: [
+      { caption: "1 · A dependency's install script runs in the shell with whatever the agent had: uid 1000, no capabilities, three write roots.", nodes: { claude: "active-maestro" }, packets: [{ edge: "claude-shell", label: "postinstall", cls: "bad" }], after: { shell: "bad" }, log: ["<span class='bad'>postinstall.sh</span> runs inside the same bubblewrap as everything else"] },
+      { caption: "2 · It tries to install a git hook and edit ~/.bashrc: both are mandatory write denies, bound read-only regardless of allowWrite.", packets: [{ edge: "shell-fs", label: ".git/hooks", cls: "bad" }], after: { fs: "bad" }, log: ["write .git/hooks/post-checkout → <span class='bad'>EPERM</span>", "write ~/.bashrc → <span class='bad'>EPERM</span>", "<span class='dim'>srt mandatory denies, ADR-0005</span>"] },
+      { caption: "3 · It tries to open 192.168.3.3 directly: there is no network interface in the sandbox, so there is nothing to connect with.", packets: [{ edge: "shell-proxy", label: "connect 192.168.3.3", cls: "bad", ms: 500 }], after: { proxy: "bad" }, log: ["connect() → <span class='bad'>ENETUNREACH</span> (--unshare-net)", "it falls back to the proxy variables it finds in the environment"] },
+      { caption: "4 · Through the proxy, by IP or by a name it controls that resolves into the LAN: the resolved-address guard refuses private ranges even for an allowed name.", packets: [{ edge: "proxy-lan", label: "nas.evil.example", cls: "bad", ms: 600 }], after: { lan: "bad" }, log: ["<span class='bad'>deny</span> nas.evil.example: resolved to a private address", "<span class='bad'>deny</span> 192.168.3.3: not in allowedDomains (strictAllowlist)", "<span class='dim'>srt deniedResolvedAddresses, ADR-0006</span>"] },
+      { caption: "5 · It tries to escape bubblewrap with unshare -Ur to undo the read-only binds: the seccomp helper refuses new user namespaces.", packets: [{ edge: "shell-fs", label: "unshare -Ur", cls: "bad", ms: 500 }], log: ["unshare(CLONE_NEWUSER) → <span class='bad'>EPERM</span>", "mount, pivot_root, setns → <span class='bad'>EPERM</span>", "<span class='dim'>spike: nested userns blocked in every variant</span>"] },
+      { caption: "6 · Suppose it had escaped bubblewrap anyway: it is uid 1000 in a pod whose root is an unprivileged host uid, and the CNI policy still only allows 443 to the listed names and DNS to the cluster resolvers.", packets: [{ edge: "proxy-cni", label: "raw socket", cls: "bad", ms: 500 }, { edge: "cni-lan", label: "192.168.3.3", cls: "bad", ms: 600 }], after: { cni: "bad" }, hold: 1800, log: ["<span class='bad'>DROPPED</span> policy denied: 192.168.3.3:445 (Hubble)", "pod uid_map: 0 <span class='ok'>2889613312</span> 65536 · no SA token · read-only root", "<span class='dim'>ADR-0003 · ADR-0006 · what remains: a shared kernel (controls matrix, enterprise prerequisite)</span>"] },
+    ]},
+  };
+  const stepsEl = document.getElementById("rt-steps"), progressEl = document.getElementById("rt-progress");
+  const who = document.getElementById("rt-who"), title = document.getElementById("rt-title"), text = document.getElementById("rt-text"), logEl = document.getElementById("rt-log");
+  let player = null;
+  function load(name) {
+    const s = scripts[name];
+    who.textContent = s.who; title.textContent = s.title; text.textContent = s.text;
+    stepsEl.innerHTML = s.steps.map((st, i) => `<button type="button">${i + 1}</button>`).join("");
+    if (player) player.stop();
+    player = F.player(flow, s.steps, { stepsEl, progressEl, replayEl: document.getElementById("replay"), nextEl: document.getElementById("next"), prevEl: document.getElementById("prev"), onStep: (n, st) => { if (st.log) log(logEl, st.log); } });
+    player.play(0);
+  }
+  document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => { document.querySelectorAll(".toggle button").forEach(x => x.classList.remove("on")); b.classList.add("on"); load(b.dataset.script); }));
+  load("allowed");
+})();
+</script>
+</body>
+</html>

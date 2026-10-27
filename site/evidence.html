@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evidence · Claude Sandbox Runtime</title>
+<meta name="description" content="Measurements from the homelab node: the feasibility spike, the chart renders, the server-side dry run, and the first rollout.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Evidence</span>
+    <h1>Measured on the node, <span>not estimated</span></h1>
+    <p class="lede">Every claim about the boundary comes from a command that ran on the cluster on 2026-10-26. The spike manifest and the raw results are in <code>docs/spike/</code>; the chart renders are reproducible with the <code>ci/*-values.yaml</code> files.</p>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">The node</span>
+    <h2>What was already there</h2>
+    <div class="stats">
+      <div class="stat reveal"><b>6.8.0-138</b><span>kernel (Ubuntu 22.04.5 HWE); idmapped mounts need 6.3+</span></div>
+      <div class="stat reveal d1"><b>k3s 1.36.4</b><span>user namespaces and ProcMountType are GA in 1.36</span></div>
+      <div class="stat reveal d2"><b>containerd 2.3.4</b><span>user-namespace pods need 2.0+</span></div>
+      <div class="stat reveal d3"><b>userns_clone = 1</b><span>and apparmor_restrict_unprivileged_userns = 0 (22.04 default)</span></div>
+      <div class="stat reveal"><b>Cilium 1.20.1</b><span>DNS proxy available for toFQDNs policy</span></div>
+      <div class="stat reveal d1"><b>local-path</b><span>the only StorageClass; hostPath on ext4 supports idmapping; NFS would not</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Spike</span>
+    <h2>Two throwaway pods, one script</h2>
+    <p class="lede">Both pods ran <code>node:22-bookworm</code>, installed bubblewrap 0.8.0, socat and ripgrep, installed sandbox-runtime 0.0.81, and ran the same checks as root and as uid 1000. They were deleted afterwards. <label class="muted" style="font-size:.9rem"><input type="checkbox" id="onlyfail"> show only rows where a variant failed or leaked</label></p>
+    <div class="table-wrap"><table id="evtable">
+      <thead><tr><th>Check</th><th>userns pod · uid 1000 · strict</th><th>userns pod · uid 0 · strict</th><th>plain pod · strict</th><th>plain pod · uid 1000 · weak</th></tr></thead>
+      <tbody>
+        <tr><td>uid_map seen inside</td><td><code>0 2889613312 65536</code></td><td>same</td><td><code>0 0 4294967295</code></td><td>same</td></tr>
+        <tr><td>masked /proc paths</td><td>0</td><td>0</td><td>13</td><td>13</td></tr>
+        <tr data-bad><td>bwrap fresh /proc</td><td><span class="pill ok">OK</span></td><td><span class="pill ok">OK</span></td><td><span class="pill bad">FAIL</span> Can't mount proc on /newroot/proc</td><td>n/a</td></tr>
+        <tr data-bad><td>srt runs a command</td><td><span class="pill ok">OK</span></td><td><span class="pill ok">OK</span></td><td><span class="pill bad">FAIL</span></td><td><span class="pill ok">OK</span></td></tr>
+        <tr><td>denyRead of a secret file</td><td>blocked</td><td>blocked</td><td>n/a</td><td>blocked</td></tr>
+        <tr data-bad><td>allowWrite path</td><td>ok</td><td><span class="pill warn">FAIL</span> dir owned by 1000, no CAP_DAC_OVERRIDE inside</td><td>n/a</td><td>ok</td></tr>
+        <tr><td>write outside allowWrite</td><td>blocked</td><td>blocked</td><td>n/a</td><td>blocked</td></tr>
+        <tr><td>allowed domain via proxy</td><td>HTTP 404 (reached)</td><td>404</td><td>n/a</td><td>404</td></tr>
+        <tr><td>denied domain</td><td>no route</td><td>no route</td><td>n/a</td><td>no route</td></tr>
+        <tr><td>nested user namespace</td><td>blocked</td><td>blocked</td><td>n/a</td><td>blocked</td></tr>
+        <tr data-bad><td>pids visible inside</td><td>4</td><td>4</td><td>n/a</td><td><span class="pill warn">18</span> whole container</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout"><p><b>Reading it.</b> Full-strength srt needs the user-namespace pod. The root-user write failure is a test artifact (the directory was owned by 1000 and the sandboxed root holds no capabilities), which is itself why the chart runs as a non-root user. Weak mode works in a plain pod but shows the sandbox the whole container's process table.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Chart</span>
+    <h2>Renders and the dry run</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Check</th><th>Input</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><code>helm lint</code></td><td><code>ci/all-enabled-values.yaml</code></td><td><span class="pill ok">0 failures</span></td></tr>
+        <tr><td><code>helm template</code>, strict</td><td>inline map: one workspace with <code>extraAllowedDomains</code>, one worker</td><td>11 objects: ServiceAccount, 2 ConfigMaps, 4 PVCs, 2 Deployments, 2 CiliumNetworkPolicies; the extra domain appears in both the srt settings and the <code>toFQDNs</code> list</td></tr>
+        <tr><td><code>helm template</code>, fallback</td><td><code>ci/weak-fallback-values.yaml</code>: weak mode, inner Bash sandbox, Kubernetes NetworkPolicy, ExternalSecret, gVisor RuntimeClass, a disabled definition</td><td>12 objects; the disabled definition is absent</td></tr>
+        <tr><td><code>helm template</code>, packaged files</td><td>three files copied into <code>sandboxes/</code>, one of them a map of two definitions</td><td>three sandboxes rendered; the one with <code>enabled: false</code> in its file is absent</td></tr>
+        <tr><td><code>helm template</code>, fleet shape</td><td><code>common.yaml</code> + <code>sandboxes/homelab/values.yaml</code>, release <code>claude-sandbox-homelab</code></td><td>5 objects named <code>claude-sandbox-homelab*</code>, no ServiceAccount (uses <code>default</code>)</td></tr>
+        <tr><td><code>helm template</code>, nothing defined</td><td>default values</td><td>1 object (the ServiceAccount): the published chart creates no sandbox by itself</td></tr>
+        <tr><td><code>kubectl apply --dry-run=server</code></td><td>the strict rendering, namespace <code>testing</code></td><td><span class="pill ok">11 objects accepted</span>: <code>hostUsers</code>, <code>procMount: Unmasked</code>, <code>appArmorProfile</code> and the Cilium schema are valid on this API</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Rollout</span>
+    <h2>The first pod, and the failure before it</h2>
+    <p>The first merge produced an Application in <code>Sync: Unknown</code> with <code>ComparisonError … pvc.yaml: index of untyped nil</code>: the inline entry stated only <code>kind</code>, <code>repo</code> and <code>remoteControl</code>, and the first 0.1.0 package had no per-kind defaults, so <code>persistence</code> was nil. The CI values had carried full entries, which is why lint passed. The definitions-as-files change (ADR-0016) added the defaults; the chart was republished as 0.1.0, the repo-server restarted to drop its cached package, and the fleet layout cut over.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Step</th><th>Observed</th></tr></thead>
+      <tbody>
+        <tr><td>parent app at the cutover commit</td><td><code>argocd-apps</code> at 1069cac; children <code>claude-sandboxes</code> Synced, <code>claude-sandbox-homelab</code> OutOfSync → Synced, <code>claude-sandbox-worker</code> Synced (renders nothing, disabled)</td></tr>
+        <tr><td>orphan</td><td>the inline <code>claude-sandbox</code> Application deleted by hand (the parent syncs without prune)</td></tr>
+        <tr><td>volumes</td><td>two local-path PVCs bound on first consumer (2 Gi home, 20 Gi workspace)</td></tr>
+        <tr><td>policy</td><td><code>CiliumNetworkPolicy/claude-sandbox-homelab</code> VALID=True</td></tr>
+        <tr><td>image</td><td><code>ghcr.io/paimonsoror/claude-sandbox:sha-50409b3</code> pulled in 7 s (296 MB)</td></tr>
+        <tr><td>pod</td><td>Running, ready; entrypoint cloned homelab-charts into <code>/workspace</code> through the egress policy, then waits for the claude.ai login</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted">The in-session probes of the running pod (uid map, egress to an allowed and a denied host from outside bubblewrap, read-only root) and the Remote Control boundary probes from a phone session are recorded in <code>docs/plan.md</code> as they are run.</p>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+<script>
+  document.getElementById("onlyfail").addEventListener("change", e => { document.querySelectorAll("#evtable tbody tr").forEach(tr => { tr.hidden = e.target.checked && !tr.hasAttribute("data-bad"); }); });
+</script>
+</body>
+</html>

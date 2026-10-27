@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Research · Claude Sandbox Runtime</title>
+<meta name="description" content="The primary sources the design rests on: Anthropic's sandbox-runtime and Claude Code documentation, Kubernetes user namespaces, the control frameworks, and the north-star projects.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Research</span>
+    <h1>The facts the design <span>rests on</span></h1>
+    <p class="lede">Read on 2026-10-26. Where a fact decided something, the ADR that used it is named. Items that could not be verified from a primary source are marked.</p>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">Anthropic</span>
+    <h2>sandbox-runtime and Claude Code</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fact</th><th>Source</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td>Linux isolation is bubblewrap with the network namespace removed; traffic goes through HTTP and SOCKS proxies on Unix sockets; a seccomp helper creates a nested user+pid+mount namespace, blocks Unix sockets and refuses new user namespaces. Ubuntu 24.04's AppArmor restriction needs a sysctl; a root caller needs CAP_SETFCAP; prefer a non-root caller.</td><td><a href="https://github.com/anthropics/sandbox-runtime" rel="noopener">sandbox-runtime README</a> (0.0.81, commit 98a4016)</td><td>ADR-0003, 0005</td></tr>
+        <tr><td><code>enableWeakerNestedSandbox</code> bind-mounts the container's /proc for unprivileged containers and "considerably weakens security"; <code>allowNestedUserNamespaces</code> means treating the write denies as not holding.</td><td>sandbox-runtime README; <a href="https://code.claude.com/docs/en/sandboxing" rel="noopener">Claude Code sandboxing</a></td><td>ADR-0003, 0005</td></tr>
+        <tr><td>Mandatory write denies: .git/hooks, .git/config, .mcp.json, .claude/commands, .claude/agents, shell rc files; on Linux the list is built at launch, three levels deep.</td><td>sandbox-runtime README; <a href="https://code.claude.com/docs/en/sandbox-environments" rel="noopener">Sandbox environments</a></td><td>ADR-0005, controls</td></tr>
+        <tr><td>The proxy decides on the client-supplied hostname without terminating TLS; domain fronting is possible; <code>deniedResolvedAddresses</code> refuses allowed names that resolve into listed ranges.</td><td>Claude Code sandboxing, sandbox-runtime README</td><td>ADR-0006, controls</td></tr>
+        <tr><td>Running the whole Claude Code process under srt isolates MCP servers and hooks too; allow writes to the project, ~/.claude, ~/.claude.json and the temp dir; allow api.anthropic.com, claude.ai and platform.claude.com.</td><td>Sandbox environments</td><td>ADR-0005, 0006, 0008</td></tr>
+        <tr><td>Remote Control server mode: <code>claude remote-control</code>, up to 32 sessions, <code>--spawn worktree</code>, <code>--permission-mode</code>; honours <code>sandbox.enabled</code> from settings; needs a claude.ai login (an API key or <code>CLAUDE_CODE_OAUTH_TOKEN</code> cannot establish sessions); <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC</code> must not be set; exits after about ten minutes without the relay; the trust prompt needs a TTY.</td><td><a href="https://code.claude.com/docs/en/remote-control" rel="noopener">Remote Control</a>; <a href="https://code.claude.com/docs/en/authentication" rel="noopener">Authentication</a></td><td>ADR-0007, 0009</td></tr>
+        <tr><td>Workspace trust can be pre-set with <code>projects["&lt;path&gt;"].hasTrustDialogAccepted</code> in ~/.claude.json. The one-time "Enable Remote Control?" confirmation has no documented non-interactive bypass.</td><td><a href="https://code.claude.com/docs/en/permissions" rel="noopener">Permissions</a>; Remote Control</td><td>ADR-0009, entrypoint</td></tr>
+        <tr><td>Managed settings at /etc/claude-code/managed-settings.json; <code>permissions.disableBypassPermissionsMode</code>, <code>forceLoginMethod</code>, <code>allowedProviders</code>, <code>DISABLE_UPDATES</code>.</td><td><a href="https://code.claude.com/docs/en/managed-settings" rel="noopener">Managed settings</a>; env-vars</td><td>ADR-0005, 0013</td></tr>
+        <tr><td>Network requirements: api.anthropic.com, claude.ai, claude.com, platform.claude.com, sso.claude.com; Datadog hosts only for optional telemetry.</td><td><a href="https://code.claude.com/docs/en/network-config" rel="noopener">Network configuration</a></td><td>ADR-0006</td></tr>
+        <tr><td>Self-hosted sandboxes: the worker polls the environment's queue with an environment key; Anthropic keeps the control plane; image hardening, egress, key storage, per-session isolation and retention are the operator's; one environment per trust boundary; the per-session secret only into the sandbox serving that session.</td><td><a href="https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes" rel="noopener">Self-hosted sandboxes</a>, <a href="https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes-security" rel="noopener">security model</a>, workers, reference</td><td>ADR-0004, 0007, 0010</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Kubernetes</span>
+    <h2>User namespaces and Pod Security</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fact</th><th>Source</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td>User namespaces (<code>hostUsers: false</code>) are GA in v1.36; need kernel 6.3+, containerd 2.0+, idmap-capable volumes; NFS unsupported; a process that is root in the container is not root on the host; capabilities become namespaced.</td><td><a href="https://kubernetes.io/blog/2026/04/23/kubernetes-v1-36-userns-ga/" rel="noopener">v1.36 user namespaces GA</a>; <a href="https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/" rel="noopener">concept page</a></td><td>ADR-0003, 0008</td></tr>
+        <tr><td><code>procMount: Unmasked</code> (KEP-4265) is stable in v1.36 and requires <code>hostUsers: false</code>; it is a privileged-level field under Pod Security Standards; PSS relaxes runAsNonRoot/runAsUser for user-namespace pods, and procMount only under baseline.</td><td><a href="https://www.kubernetes.dev/resources/keps/4265/" rel="noopener">KEP-4265</a>; <a href="https://kubernetes.io/docs/concepts/security/pod-security-standards/" rel="noopener">Pod Security Standards</a></td><td>ADR-0003, 0013</td></tr>
+        <tr><td>agent-sandbox threat model: untrusted code must not compromise the node (gVisor/Kata via RuntimeClass); inter-sandbox traffic blocked by default; no Kubernetes API access; resource limits.</td><td><a href="https://github.com/kubernetes-sigs/agent-sandbox/blob/main/docs/security/threat_model.md" rel="noopener">agent-sandbox threat model</a></td><td>controls, ADR-0015</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Control frameworks</span>
+    <h2>What "aligned" is measured against</h2>
+    <div class="cards">
+      <div class="card reveal"><h3>OWASP</h3><p><a href="https://genai.owasp.org/llm-top-10/" rel="noopener">Top 10 for LLM Applications 2025</a> (LLM06 excessive agency, LLM05, LLM02); <a href="https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/" rel="noopener">Agentic AI Threats and Mitigations v1.1</a> (T1–T17); <a href="https://genai.owasp.org/resource/securing-agentic-applications-guide-1-0/" rel="noopener">Securing Agentic Applications Guide 1.0</a> (3.2.3, 3.2.8, 5, 9.x).</p></div>
+      <div class="card reveal d1"><h3>NIST</h3><p><a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-190.pdf" rel="noopener">SP 800-190</a> container security (4.1.4, 4.1.5, 4.4.2, 4.4.3, 4.5.5); <a href="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf" rel="noopener">AI 600-1</a> generative AI profile (GV-1.7, GV-6.1, MS-2.6, MS-2.7). AI RMF 1.0 core text not re-fetched this session.</p></div>
+      <div class="card reveal d2"><h3>CSA and MITRE</h3><p><a href="https://www.cloudsecurityalliance.org/artifacts/agentic-ai-red-teaming-guide" rel="noopener">CSA Agentic AI Red Teaming Guide</a> (read through a mirror), MAESTRO; <a href="https://github.com/mitre-atlas/atlas-data" rel="noopener">MITRE ATLAS</a> v6 2026.09 mitigations M0024, M0028, M0029, M0030, M0032, M0037.</p></div>
+      <div class="card reveal d3"><h3>Industry sandboxes</h3><p>OpenAI Codex agent approvals and security; <a href="https://docs.docker.com/ai/sandboxes/security/" rel="noopener">Docker Sandboxes</a>; E2B enterprise; <a href="https://www.daytona.io/docs/en/isolation" rel="noopener">Daytona isolation</a>; GKE Agent Sandbox. CIS Kubernetes Benchmark and Microsoft guidance via secondary sources only.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">North star</span>
+    <h2>The control planes and substrates</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Project</th><th>What the source says</th><th>Links</th></tr></thead>
+      <tbody>
+        <tr><td><b>kubernetes-sigs/agent-sandbox</b></td><td>"a sandbox orchestrator"; Sandbox, SandboxTemplate, SandboxWarmPool, SandboxClaim; Sandbox Router by X-Sandbox-ID; isolation delegated to "Sandbox Runtimes (like gVisor or Kata Containers)" via RuntimeClass; no provider API; Apache-2.0, v1.0.x.</td><td><a href="https://github.com/kubernetes-sigs/agent-sandbox" rel="noopener">README</a>, <a href="https://agent-sandbox.sigs.k8s.io/docs/getting_started/overview/" rel="noopener">overview</a>, <a href="https://agent-sandbox.sigs.k8s.io/docs/use-cases/anthropic-managed-agents/" rel="noopener">Managed Agents use case</a></td></tr>
+        <tr><td><b>GKE Agent Sandbox / Agent Substrate</b></td><td>gVisor required and enforced by admission policy; Pod Snapshots; Agent Substrate is a sibling project (pre-1.0, private GA) with Actors on warm Workers under gVisor or Cloud Hypervisor.</td><td><a href="https://docs.cloud.google.com/kubernetes-engine/docs/how-to/how-install-agent-sandbox" rel="noopener">install</a>, <a href="https://docs.cloud.google.com/kubernetes-engine/ai-ml/about-agent-substrate" rel="noopener">Agent Substrate</a></td></tr>
+        <tr><td><b>AWS Lambda MicroVMs</b></td><td>Firecracker microVMs, snapshot boot, suspend/resume, 8 h max; "a managed sandbox provider in self-hosted sandboxes for Claude Managed Agents"; "Your Anthropic organization API key never reaches AWS compute". Cloud-only.</td><td><a href="https://docs.aws.amazon.com/lambda/latest/dg/lambda-microvms-guide.html" rel="noopener">guide</a>, <a href="https://docs.aws.amazon.com/lambda/latest/dg/microvms-integrations-claude-managed-agents.html" rel="noopener">Claude integration</a></td></tr>
+        <tr><td><b>NVIDIA OpenShell</b></td><td>Gateway + Supervisor + CLI; Landlock, seccomp notify, deny-all per-binary egress with L7/TLS inspection, credential injection, Policy Advisor and Prover; compute drivers Docker/Podman/Kubernetes/libkrun VM; on Kubernetes it creates agent-sandbox Sandbox objects; 0.1.x; not on Anthropic's provider list (not verified as supported).</td><td><a href="https://github.com/NVIDIA/OpenShell" rel="noopener">README</a>, <a href="https://docs.nvidia.com/openshell/dev/about/architecture" rel="noopener">architecture</a>, <a href="https://www.redhat.com/en/blog/bringing-claude-self-hosted-sandboxes-to-openshell-on-red-hat-ai" rel="noopener">Red Hat on Claude sandboxes</a></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+</body>
+</html>

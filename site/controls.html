@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controls · Claude Sandbox Runtime</title>
+<meta name="description" content="The build measured against published agent-sandbox controls from OWASP, Anthropic, NIST, CSA, Kubernetes, MITRE ATLAS and commercial sandboxes, with what an enterprise port needs for each.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Controls</span>
+    <h1>Where the build stands against <span>published controls</span></h1>
+    <p class="lede">Sixty-odd controls from OWASP (LLM Top 10, Agentic Threats and Mitigations, Securing Agentic Applications), Anthropic's own sandboxing and Managed Agents guidance, NIST SP 800-190 and AI 600-1, the CSA red-teaming guide, Kubernetes Pod Security Standards and the agent-sandbox threat model, MITRE ATLAS, and the security models of Codex, Docker Sandboxes, E2B and Daytona. Every row has a status and a porting note; the full matrix is <code>docs/controls-matrix.md</code>.</p>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">Scorecard</span>
+    <h2>By domain</h2>
+    <div class="legend"><span class="m">Met</span><span class="p">Partial, with a stated residual</span><span class="g">Gap</span></div>
+    <div class="table-wrap"><table id="score"><thead><tr><th>Domain</th><th>Met</th><th>Partial</th><th>Gap</th><th style="width:38%">Share</th></tr></thead><tbody></tbody></table></div>
+    <p class="muted">Strong where the sandbox runtime and Kubernetes give controls for free: filesystem, egress, no cluster credentials, non-root, user namespaces. The gaps cluster in three places an enterprise cares about and one owner can defer.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The three gaps</span>
+    <h2>What an enterprise port must close first</h2>
+    <div class="cards">
+      <div class="card reveal"><span class="pill bad">kernel</span><h3>A separate kernel per sandbox</h3><p>Sources: OWASP SAAG 3.2.3a and 9.2a, agent-sandbox threat model, Docker Sandboxes, E2B. Here: one bare-metal node, no nested virtualisation; the defence is user namespace + bubblewrap + seccomp on a shared kernel.</p><p><b>Port:</b> a sandboxed RuntimeClass (gVisor or Kata/microVM) through <code>isolation.runtimeClassName</code> with srt in weak mode inside; this also restores PSS <i>restricted</i>.</p></div>
+      <div class="card reveal d1"><span class="pill bad">credentials</span><h3>Credentials never inside the sandbox</h3><p>Sources: Anthropic cloud sessions' credential proxy, Docker and Daytona secret placeholders, OWASP SAAG 3.2.8. Here: the wrapped process can read its own login and the GitHub token; the environment key is queue-scoped.</p><p><b>Port:</b> srt's <code>credentials</code> masking behind <code>tlsTerminate</code> with an enterprise CA, or an external credential proxy; GitHub App tokens per session; Workload Identity Federation.</p></div>
+      <div class="card reveal d2"><span class="pill bad">audit</span><h3>Signed, centralised audit</h3><p>Sources: OWASP ASI T08 and SAAG 9.4, ATLAS M0024, Claude Code OpenTelemetry guidance. Here: stdout in Loki, transcripts on a volume, srt denials only with debug on.</p><p><b>Port:</b> OTLP from Claude Code to the collector, structured srt and Hubble denials, append-only storage with retention and redaction policy.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Selected rows</span>
+    <h2>The controls that decide the design</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Control</th><th>Source</th><th>This build</th><th>Status</th><th>Enterprise port</th></tr></thead>
+      <tbody>
+        <tr><td>Filesystem and network isolation are both required</td><td>Anthropic, sandbox-runtime README</td><td>bubblewrap binds + removed network namespace + proxy allowlist</td><td><span class="pill ok">Met</span></td><td>same</td></tr>
+        <tr><td>Read-only filesystem where possible; limited egress</td><td>OWASP SAAG 3.2.3b</td><td>read-only root; three write roots; one-host base allowlist</td><td><span class="pill ok">Met</span></td><td>admission rule rejecting writable root</td></tr>
+        <tr><td>Proxy decides on client hostname; domain fronting possible</td><td>Anthropic sandboxing docs</td><td>not terminated</td><td><span class="pill warn">Partial</span></td><td>TLS-terminating egress proxy with inspection</td></tr>
+        <tr><td>Refuse allowed names that resolve to private ranges</td><td>Anthropic, srt <code>deniedResolvedAddresses</code></td><td>RFC 1918 + CGNAT denied in every settings file</td><td><span class="pill ok">Met</span></td><td>add the enterprise's own ranges and metadata endpoints</td></tr>
+        <tr><td>Traffic between sandboxes blocked by default; no API access</td><td>agent-sandbox threat model</td><td>ingress denied; egress cannot reach cluster CIDRs; no SA token</td><td><span class="pill ok">Met</span></td><td>same</td></tr>
+        <tr><td>Secrets outside images, provided at runtime, only where needed</td><td>NIST SP 800-190 4.1.4</td><td>no secret in image or chart; worker key only on the worker</td><td><span class="pill ok">Met</span></td><td>ExternalSecret path mandatory</td></tr>
+        <tr><td>Per-session secret only into the sandbox serving that session</td><td>Anthropic Managed Agents security model</td><td>always-on worker holds it in process</td><td><span class="pill warn">Partial</span></td><td>per-session Jobs with a per-Job Secret</td></tr>
+        <tr><td>Container root is not host root; capabilities namespaced</td><td>Kubernetes user namespaces (1.36 GA)</td><td>on; uid_map 0 2889613312 65536</td><td><span class="pill ok">Met</span></td><td>the compensating control for the PSS gap</td></tr>
+        <tr><td>procMount Default; seccomp not Unconfined; AppArmor RuntimeDefault</td><td>PSS baseline / restricted</td><td>Unmasked, Unconfined, Unconfined (srt re-applies seccomp inside)</td><td><span class="pill bad">Gap</span></td><td>sandboxed RuntimeClass with weak mode, or a namespace exemption pinned by ValidatingAdmissionPolicy</td></tr>
+        <tr><td>Nested sandbox weakenings off</td><td>Anthropic docs on enableWeakerNestedSandbox / allowNestedUserNamespaces</td><td>both off by default; weak is an explicit flag</td><td><span class="pill ok">Met</span></td><td>admission rule: the flag only with a sandboxed RuntimeClass</td></tr>
+        <tr><td>Whole process under the runtime; never bypass permissions as root</td><td>Anthropic sandbox-environments, security</td><td>srt wraps everything; non-root; bypassPermissions disabled</td><td><span class="pill ok">Met</span></td><td>same, delivered by server-managed settings</td></tr>
+        <tr><td>Trusted registries; image signature verification</td><td>NIST SP 800-190 4.1.5, OWASP ASI T17</td><td>immutable sha tags from CI; unsigned</td><td><span class="pill warn">Partial</span></td><td>cosign in the workflow, policy-controller at admission, SBOM</td></tr>
+        <tr><td>Per-action logs with agent and session id, signed, append-only</td><td>OWASP ASI T08, SAAG 9.4, ATLAS M0024</td><td>not implemented</td><td><span class="pill bad">Gap</span></td><td>signed log pipeline</td></tr>
+        <tr><td>Human approval for high-impact actions</td><td>OWASP LLM06, ATLAS M0029/M0030</td><td>Remote Control prompts; permission mode per workspace; bypass disabled</td><td><span class="pill ok">Met</span> (workspaces)</td><td>second-person approval for production-affecting tools</td></tr>
+        <tr><td>Sandbox should not accumulate data and sessions</td><td>OWASP SAAG 5-OS, 9.3</td><td>workspaces persist by design; worker sessions share /workspace</td><td><span class="pill bad">Gap</span> (worker)</td><td>per-session pods with fresh volumes; warm pools with claims</td></tr>
+        <tr><td>CPU, memory, time limits; LimitRanges</td><td>OWASP SAAG 5, agent-sandbox</td><td>requests and limits per sandbox; emptyDir size limits</td><td><span class="pill ok">Met</span></td><td>LimitRange and ResourceQuota in the namespace</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Invariants</span>
+    <h2>What must survive a port unchanged</h2>
+    <p>These are what makes the design hold; an enterprise deployment enforces them with admission policy rather than trusting the chart (ADR-0013).</p>
+    <div class="layers">
+      <div class="layer reveal"><div class="name">Pod<small>securityContext</small></div><div class="chips"><span class="chip">hostUsers: false</span><span class="chip">runAsNonRoot, uid 1000</span><span class="chip">capabilities drop ALL</span><span class="chip">readOnlyRootFilesystem</span><span class="chip">automountServiceAccountToken: false</span></div></div>
+      <div class="layer reveal"><div class="name">srt<small>settings.json</small></div><div class="chips"><span class="chip">strict mode</span><span class="chip">strictAllowlist: true</span><span class="chip">deniedResolvedAddresses: private ranges</span><span class="chip">mandatory write denies</span><span class="chip">allowNestedUserNamespaces: false</span></div></div>
+      <div class="layer reveal"><div class="name">Network<small>one list</small></div><div class="chips"><span class="chip">same domains in proxy and CNI policy</span><span class="chip">no ingress</span><span class="chip">no cluster or LAN destinations</span></div></div>
+      <div class="layer reveal"><div class="name">Claude Code<small>managed settings</small></div><div class="chips"><span class="chip sn">disableBypassPermissionsMode</span><span class="chip sn">forceLoginMethod: claudeai</span><span class="chip sn">DISABLE_UPDATES</span><span class="chip sn">allowedProviders, forceLoginOrgUUID (enterprise)</span></div></div>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+<script>
+  (function(){
+    const S = [["Filesystem",7,1,0],["Network",7,2,0],["Credentials",4,3,1],["Process / kernel",6,3,2],["Identity",3,2,0],["Supply chain",2,2,0],["Observability",0,4,2],["Human oversight",2,1,0],["Data handling",1,1,0],["Resources",1,1,0],["Lifecycle",1,0,1]];
+    document.querySelector("#score tbody").innerHTML = S.map(([d,m,p,g]) => { const t = m+p+g; return `<tr><td><b>${d}</b></td><td>${m}</td><td>${p}</td><td>${g}</td><td><div class="bar" role="img" aria-label="${m} met, ${p} partial, ${g} gap"><i class="m" style="width:${100*m/t}%"></i><i class="p" style="width:${100*p/t}%"></i><i class="g" style="width:${100*g/t}%"></i></div></td></tr>`; }).join("");
+  })();
+</script>
+</body>
+</html>
