@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Walkthrough · Claude Sandbox Runtime</title>
 <meta name="description" content="Step by step: deploying the chart, the one-time workspace bootstrap, creating a Managed Agents environment and key, the Secret, enabling the worker, and verifying each step, with the exact commands and their real output.">
-<link rel="stylesheet" href="assets/site.css?v=20261027d">
-<script src="assets/site.js?v=20261027d"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261027e">
+<script src="assets/site.js?v=20261027e"></script>
 <style>
   .term { background: #1f1e1d; color: #f0ede6; border-radius: 10px; padding: 14px 16px; font-family: var(--mono); font-size: .8rem; line-height: 1.55; overflow-x: auto; white-space: pre; margin: 10px 0 16px; border: 1px solid #3b3733; }
   .term .p { color: #e8906e; } .term .o { color: #a8a298; } .term .ok { color: #7fb37a; } .term .bad { color: #e07068; } .term .k { color: #8fb0d8; }
@@ -68,7 +68,7 @@
     <h3>Step 1 · Watch the pod come up and wait for a login</h3>
     <div class="stepgrid">
       <div>
-        <p>ArgoCD reads our Git repository and creates everything the sandbox needs: its disks, its settings, its network fence and the pod itself. The entrypoint clones the repository named in the sandbox's values into the empty <code>/workspace</code> volume, pre-trusts it for Claude Code, and then waits. It does not crash-loop: Remote Control needs a real claude.ai login, which only you can produce.</p>
+        <p>ArgoCD reads our Git repository and creates everything the sandbox needs: its disks, its settings, its network fence and the pod itself. Then the startup script copies the project into the empty <code>/workspace</code> disk, marks it as trusted for Claude Code, and waits. It waits patiently rather than failing, because the one thing it needs, a Claude sign-in, has to come from you.</p>
         <div class="term"><span class="p">$</span> kubectl -n claude-sandbox get pods
 <span class="o">NAME                                     READY   STATUS    RESTARTS   AGE
 claude-sandbox-homelab-7bff448f4-zt9vv   1/1     Running   0          10m</span>
@@ -93,7 +93,7 @@ Paste code here if prompted &gt; </span><span class="k">[paste the code]</span>
 <span class="p">$</span> kubectl -n claude-sandbox exec deploy/claude-sandbox-homelab -- claude auth status; echo $?
 <span class="ok">0</span></div>
       </div>
-      <div class="card"><h3>What is true at this point</h3><p>The entrypoint's wait loop notices <code>.credentials.json</code> on its next 30-second check and starts <code>srt -- claude remote-control</code>. The login is our own Claude subscription. The sandbox can use it, and nothing else. Renewal, when Claude Code warns of expiry, is the same command again.</p></div>
+      <div class="card"><h3>What is true at this point</h3><p>The startup script notices <code>.credentials.json</code> on its next 30-second check and starts <code>srt -- claude remote-control</code>. The login is our own Claude subscription. The sandbox can use it, and nothing else. Renewal, when Claude Code warns of expiry, is the same command again.</p></div>
     </div>
 
     <h3>Step 3 · Claude Code connects to Anthropic <span class="pill ok">automatic</span></h3>
@@ -285,7 +285,7 @@ YAML
     ],
     edges: [
       { id: "argo-pod", from: "argo", to: "pod" },
-      { id: "pod-github", from: "pod", to: "github", kind: "c", bend: 40 },
+      { id: "pod-github", from: "pod", to: "github", kind: "back" },
       { id: "laptop-pod", from: "laptop", to: "pod" },
       { id: "laptop-oauth", from: "laptop", to: "oauth" },
       { id: "pod-srv", from: "pod", to: "srv", kind: "v" },
