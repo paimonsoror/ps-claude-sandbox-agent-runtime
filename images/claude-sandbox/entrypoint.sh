@@ -44,7 +44,10 @@ git config --global --add safe.directory /workspace >/dev/null 2>&1 || true
 # yet"). Keep them out of git status without touching the repository's tracked files.
 if [ -d /workspace/.git ]; then
   mkdir -p /workspace/.git/info
-  for f in .bashrc .bash_profile .profile .zshrc .zprofile .ripgreprc; do
+  # The full mandatory-deny set: shell rc files, git config, .ripgreprc, .mcp.json, the IDE
+  # directories and the Claude config directories (sandbox-runtime README).
+  for f in .bashrc .bash_profile .profile .zshrc .zprofile .ripgreprc .gitconfig .gitmodules \
+           .mcp.json .vscode .idea .claude/commands .claude/agents; do
     grep -qxF "$f" /workspace/.git/info/exclude 2>/dev/null || echo "$f" >> /workspace/.git/info/exclude
   done
 fi
