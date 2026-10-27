@@ -39,11 +39,15 @@ CiliumNetworkPolicy: DNS + TCP/443 to the same allowlist, nothing else; no ingre
 
 ## Quick start on another cluster
 
+One values file per sandbox; any number of them merge (ADR-0016):
+
 ```bash
 helm install cs oci://ghcr.io/paimonsoror/charts/claude-sandbox --version 0.1.0 \
-  -n claude-sandbox --create-namespace --set image.tag=sha-<short>
+  -n claude-sandbox --create-namespace --set image.tag=sha-<short> \
+  -f examples/values/homelab.yaml -f examples/values/worker.yaml
 kubectl -n claude-sandbox exec -it deploy/cs-claude-sandbox-homelab -- claude auth login
 kubectl -n claude-sandbox attach -it deploy/cs-claude-sandbox-homelab   # answer "Enable Remote Control? y"
 ```
 
+For a fleet, one ArgoCD Application per sandbox directory: [`deploy/argocd`](deploy/argocd).
 Requirements and values are in the [chart README](charts/claude-sandbox/README.md).

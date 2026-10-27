@@ -1,24 +1,12 @@
-# helm lint/template values: every kind enabled, default isolation.
+# helm lint/template values: every kind enabled, default isolation, map schema with defaults.
 image:
   tag: sha-test
 sandboxes:
-  - name: homelab
+  homelab:
     kind: workspace
-    enabled: true
     repo: https://github.com/paimonsoror/homelab-charts.git
-    allowedDomains: [claude.ai, claude.com, platform.claude.com, sso.claude.com, github.com, "*.github.com"]
-    remoteControl: {spawn: worktree, capacity: 8, permissionMode: default, namePrefix: ""}
-    github: {existingSecret: claude-sandbox-github, key: token}
-    env: []
-    persistence: {workspace: {size: 20Gi, storageClass: ""}, home: {size: 2Gi, storageClass: ""}, keep: true}
-    resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "4", memory: 6Gi}}
-  - name: worker
+    extraAllowedDomains: ["*.sororlab.dev:443"]
+    remoteControl:
+      spawn: worktree
+  worker:
     kind: managed-agents-worker
-    enabled: true
-    allowedDomains: []
-    environment: {existingSecret: claude-sandbox-managed-agents, vaultPath: claude-sandbox/managed-agents}
-    maxIdle: 60s
-    logFormat: json
-    env: []
-    persistence: {workspace: {size: 10Gi, storageClass: ""}, home: {size: 1Gi, storageClass: ""}, keep: true}
-    resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}

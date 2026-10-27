@@ -45,17 +45,43 @@ Built from `images/claude-sandbox` by the `claude-sandbox image` workflow and pu
 `ghcr.io/paimonsoror/claude-sandbox:sha-<short>`. Pins (`CLAUDE_CODE_VERSION`, `SRT_VERSION`,
 `ANT_VERSION`) are Dockerfile build args. The ArgoCD entry sets `image.tag`.
 
+## Defining sandboxes
+
+`sandboxes` is a map keyed by name. Each definition names its `kind` and only what differs
+from `sandboxDefaults.<kind>`; `extraAllowedDomains` are appended to the kind's list. Three
+ways to supply definitions, all merged (ADR-0016):
+
+```yaml
+# inline, or in any number of values files (-f a.yaml -f b.yaml: maps merge)
+sandboxes:
+  homelab:
+    kind: workspace
+    repo: https://github.com/paimonsoror/homelab-charts.git
+    remoteControl: {spawn: worktree}
+  worker:
+    kind: managed-agents-worker
+    enabled: false
+```
+
+- Values files: `examples/values/*.yaml`, one sandbox each.
+- Files packaged in a vendored chart: drop `sandboxes/<name>.yaml` next to `templates/`
+  (`examples/sandboxes/`); the published package ships none.
+- A fleet: one ArgoCD Application per directory, `deploy/argocd/applicationset.yaml`.
+
 ## Values worth knowing
 
 | Key | Default | Meaning |
 |---|---|---|
 | `isolation.mode` | `strict` | `strict` (user namespace, full bubblewrap) or `weak` |
 | `isolation.wrap` | `srt` | wrap the whole process with srt, or use Claude Code's per-command Bash sandbox instead |
-| `network.baseAllowedDomains` | `[api.anthropic.com]` | names every sandbox may reach; each sandbox adds its own `allowedDomains` |
+| `network.baseAllowedDomains` | `[api.anthropic.com]` | names every sandbox may reach; kinds and sandboxes add their own |
 | `network.policy.engine` | `cilium` | `cilium`, `kubernetes` or `none` |
 | `debug.srt` | `false` | `SRT_DEBUG=1` (prints every proxy decision and denial) |
-| `sandboxes[].repo` | `""` | git URL cloned into the empty workspace on first start |
-| `sandboxes[].remoteControl.permissionMode` | `default` | starting permission mode of Remote Control sessions |
+| `sandboxDefaults.<kind>` | see values.yaml | everything a definition does not state |
+| `sandboxes.<name>.repo` | `""` | git URL cloned into the empty workspace on first start |
+| `sandboxes.<name>.remoteControl.permissionMode` | `default` | starting permission mode of Remote Control sessions |
+| `sandboxFiles.glob` | `sandboxes/*.yaml` | packaged definition files |
+| `fullnameOverride` / `serviceAccount.create` | | set `claude-sandbox` / `false` when several releases share a namespace |
 
 ## Verifying the boundary
 

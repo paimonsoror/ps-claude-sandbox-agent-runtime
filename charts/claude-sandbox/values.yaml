@@ -1,6 +1,13 @@
 # claude-sandbox: sandboxed execution environments for Claude agents.
-# Each entry in `sandboxes` becomes one pod with its own volumes, srt policy and network policy.
+# Every sandbox becomes one pod with its own volumes, srt policy and network policy.
 # Decisions behind every default: https://github.com/paimonsoror/ps-claude-sandbox-agent-runtime/tree/main/docs/adr
+#
+# Sandboxes are defined in three places, all merged (ADR-0016):
+#   1. `sandboxes` below: a map keyed by sandbox name. Maps deep-merge across values files, so
+#      each sandbox can live in its own values file (-f sandboxes/team-a.yaml -f sandboxes/team-b.yaml).
+#   2. `sandboxes/*.yaml` inside the chart directory (`sandboxFiles`), for a vendored chart.
+#   3. Per-kind `sandboxDefaults`, applied under every definition so a definition only states
+#      what differs.
 
 image:
   repository: ghcr.io/paimonsoror/claude-sandbox
@@ -84,14 +91,19 @@ externalSecrets:
     kind: SecretStore
   refreshInterval: 1h
 
-sandboxes:
-  # A Claude Code workspace driven over Remote Control (ADR-0004, ADR-0009).
-  - name: homelab
-    kind: workspace
+# Definitions packaged inside the chart directory. The published chart ships none; a vendored
+# copy can drop one file per sandbox here. A file is either one definition (has `kind`; its
+# name is the file name unless it sets `name`) or a map of name -> definition.
+sandboxFiles:
+  enabled: true
+  glob: "sandboxes/*.yaml"
+
+# Applied under every definition of the same kind. A definition's own keys win; its
+# `extraAllowedDomains` are appended to the kind's `allowedDomains`.
+sandboxDefaults:
+  workspace:
     enabled: true
-    # Cloned into the empty /workspace volume on first start. Leave empty to start blank.
     repo: ""
-    # Added to network.baseAllowedDomains for this sandbox.
     allowedDomains:
       - claude.ai
       - claude.com
@@ -105,6 +117,7 @@ sandboxes:
       - "*.npmjs.org"
       - pypi.org
       - files.pythonhosted.org
+    extraAllowedDomains: []
     remoteControl:
       # same-dir | worktree (worktree needs /workspace to be a git repository)
       spawn: same-dir
@@ -125,7 +138,7 @@ sandboxes:
       home:
         size: 2Gi
         storageClass: ""
-      # Keep the PVCs when the sandbox entry is removed (helm.sh/resource-policy: keep).
+      # Keep the PVCs when the sandbox is removed (helm.sh/resource-policy: keep).
       keep: true
     resources:
       requests:
@@ -134,15 +147,13 @@ sandboxes:
       limits:
         cpu: "4"
         memory: 6Gi
-
-  # An Anthropic Managed Agents self-hosted environment worker (ADR-0004, ADR-0010).
-  - name: worker
-    kind: managed-agents-worker
-    enabled: false
+  managed-agents-worker:
+    enabled: true
     allowedDomains: []
+    extraAllowedDomains: []
     environment:
       # Secret with keys ANTHROPIC_ENVIRONMENT_ID and ANTHROPIC_ENVIRONMENT_KEY, created out
-      # of git (or by the ExternalSecret below when externalSecrets.enabled).
+      # of git (or by the ExternalSecret when externalSecrets.enabled).
       existingSecret: claude-sandbox-managed-agents
       # Vault KV path for the ExternalSecret (ignored unless externalSecrets.enabled).
       vaultPath: claude-sandbox/managed-agents
@@ -164,3 +175,6 @@ sandboxes:
       limits:
         cpu: "2"
         memory: 4Gi
+
+# name -> definition. Empty by default; see examples/sandboxes/ and deploy/argocd/.
+sandboxes: {}

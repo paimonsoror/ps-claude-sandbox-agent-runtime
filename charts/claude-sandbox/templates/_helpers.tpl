@@ -35,8 +35,55 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{/*
+Merge one definition over its kind's defaults. Takes dict{root, name, sb}; returns JSON.
+Lists in the definition replace the defaults' lists, except extraAllowedDomains, which the
+domains helper appends.
+*/}}
+{{- define "claude-sandbox.mergeDefinition" -}}
+{{- $kind := .sb.kind | default "workspace" -}}
+{{- $defaults := index (.root.Values.sandboxDefaults | default dict) $kind | default dict -}}
+{{- $merged := mustMergeOverwrite (dict) (deepCopy $defaults) (deepCopy .sb) -}}
+{{- $_ := set $merged "name" .name -}}
+{{- $_ := set $merged "kind" $kind -}}
+{{- if not (hasKey $merged "enabled") -}}{{- $_ := set $merged "enabled" true -}}{{- end -}}
+{{- toJson $merged -}}
+{{- end -}}
+
+{{/*
+Every sandbox definition, from .Values.sandboxes and from files matching sandboxFiles.glob
+inside the chart, each merged with its kind's defaults. Returns a JSON map name -> definition.
+A definition from .Values wins over a file of the same name.
+*/}}
+{{- define "claude-sandbox.sandboxes" -}}
+{{- $root := . -}}
+{{- $out := dict -}}
+{{- if and .Values.sandboxFiles .Values.sandboxFiles.enabled -}}
+{{- range $path, $bytes := .Files.Glob .Values.sandboxFiles.glob -}}
+{{- $doc := $bytes | toString | fromYaml -}}
+{{- if hasKey $doc "Error" -}}
+{{- fail (printf "sandbox file %s: %s" $path (index $doc "Error")) -}}
+{{- end -}}
+{{- $entries := dict -}}
+{{- if hasKey $doc "kind" -}}
+{{- $n := $doc.name | default (base $path | trimSuffix ".yaml" | trimSuffix ".yml") -}}
+{{- $_ := set $entries $n (omit $doc "name") -}}
+{{- else -}}
+{{- $entries = $doc -}}
+{{- end -}}
+{{- range $name, $sb := $entries -}}
+{{- $_ := set $out $name (include "claude-sandbox.mergeDefinition" (dict "root" $root "name" $name "sb" $sb) | fromJson) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $name, $sb := (.Values.sandboxes | default dict) -}}
+{{- $_ := set $out $name (include "claude-sandbox.mergeDefinition" (dict "root" $root "name" $name "sb" $sb) | fromJson) -}}
+{{- end -}}
+{{- toJson $out -}}
+{{- end -}}
+
+{{/*
 Per-sandbox helpers. Each takes a dict with keys `root` (the top-level context) and `sb`
-(one entry of .Values.sandboxes).
+(one merged definition, which carries .name and .kind).
 */}}
 {{- define "claude-sandbox.sb.fullname" -}}
 {{- printf "%s-%s" (include "claude-sandbox.fullname" .root) .sb.name | trunc 63 | trimSuffix "-" -}}
@@ -49,9 +96,9 @@ claude-sandbox/name: {{ .sb.name }}
 claude-sandbox/kind: {{ .sb.kind }}
 {{- end -}}
 
-{{/* The union of the base and per-sandbox allowlists, in srt grammar. */}}
+{{/* The union of the base, the kind's and the sandbox's allowlists, in srt grammar. */}}
 {{- define "claude-sandbox.sb.domains" -}}
-{{- $all := concat (.root.Values.network.baseAllowedDomains | default list) (.sb.allowedDomains | default list) | uniq -}}
+{{- $all := concat (.root.Values.network.baseAllowedDomains | default list) (.sb.allowedDomains | default list) (.sb.extraAllowedDomains | default list) | uniq -}}
 {{- toJson $all -}}
 {{- end -}}
 

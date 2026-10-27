@@ -1,6 +1,6 @@
 {{- $pol := .Values.network.policy }}
 {{- if $pol.enabled }}
-{{- range $sb := .Values.sandboxes }}
+{{- range $name, $sb := include "claude-sandbox.sandboxes" . | fromJson }}
 {{- if $sb.enabled }}
 {{- $ctx := dict "root" $ "sb" $sb }}
 {{- $name := include "claude-sandbox.sb.fullname" $ctx }}

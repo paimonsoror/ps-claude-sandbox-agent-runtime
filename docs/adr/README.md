@@ -21,6 +21,7 @@ numbered, never edited once accepted; a change is a new ADR that supersedes the 
 | [0013](0013-control-framework-alignment-and-enterprise-porting.md) | Control framework alignment and enterprise porting | Accepted |
 | [0014](0014-standalone-repository-and-oci-chart.md) | Standalone repository and OCI chart | Accepted |
 | [0015](0015-north-star-control-plane-over-pluggable-substrates.md) | North star: a control plane over pluggable sandbox substrates | Proposed |
+| [0016](0016-sandbox-definitions-as-files.md) | Sandbox definitions as files, one per sandbox (map schema, packaged files, ApplicationSet); 0.1.0 republish rule | Accepted |
 
 ## Template
 

@@ -1,0 +1,9 @@
+# A per-sandbox values file for the registry-consumed chart. Any number of these merge:
+#   helm upgrade --install cs oci://ghcr.io/paimonsoror/charts/claude-sandbox --version 0.1.0 \
+#     -f examples/values/homelab.yaml -f examples/values/worker.yaml
+sandboxes:
+  homelab:
+    kind: workspace
+    repo: https://github.com/paimonsoror/homelab-charts.git
+    remoteControl:
+      spawn: worktree

@@ -163,4 +163,15 @@ ingress, mounting a workspace volume read-only for review. Needs an ADR that ame
   into `main` is the deploy and is the owner's action (the session's policy blocks pushes to
   the production app-of-apps branch).
 - `docs/runbook.md` written ahead of phase 4.
-- Not yet run: a live pod from the chart.
+- Merged into homelab-charts `main` (5d0d55f) at the owner's request; rollout of the inline
+  0.1.0 Application in progress.
+
+**2026-10-26, definitions as files (ADR-0016):** `sandboxes` became a map with per-kind
+defaults, packaged `sandboxes/*.yaml` are read, and an ApplicationSet (one Application per
+directory) is the fleet layout. Renders verified: inline map, three packaged files (one a map
+file), two merged values files, a disabled definition omitted, empty chart renders only the
+ServiceAccount. Chart stays 0.1.0 and is republished by moving the tag (owner decision).
+Homelab cutover staged on branch `claude-sandboxes-appset`: `manifests/claude-sandboxes/`
+(ApplicationSet, `common.yaml`, `sandboxes/homelab`, `sandboxes/worker`) and the app-of-apps
+entry `claude-sandboxes` replacing the inline `claude-sandbox` entry. After the merge: hard
+refresh or restart `argocd-repo-server` so the republished 0.1.0 is fetched.

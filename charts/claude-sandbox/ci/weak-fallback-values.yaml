@@ -1,5 +1,6 @@
 # helm lint/template values: the portable fallback (no user namespaces, no Cilium), the
-# inner Claude Bash sandbox instead of the srt wrap, and the ExternalSecret for the worker.
+# inner Claude Bash sandbox instead of the srt wrap, the ExternalSecret for the worker, and a
+# definition that overrides most of its kind's defaults.
 image:
   tag: sha-test
 isolation:
@@ -12,22 +13,18 @@ network:
 externalSecrets:
   enabled: true
 sandboxes:
-  - name: homelab
+  lab:
     kind: workspace
-    enabled: true
     allowedDomains: [claude.ai, platform.claude.com]
     remoteControl: {spawn: same-dir, capacity: 4, permissionMode: acceptEdits, namePrefix: lab}
     github: {existingSecret: "", key: token}
     env: [{name: EXAMPLE, value: "1"}]
     persistence: {workspace: {size: 5Gi, storageClass: standard}, home: {size: 1Gi, storageClass: standard}, keep: false}
     resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
-  - name: worker
+  worker:
     kind: managed-agents-worker
-    enabled: true
-    allowedDomains: []
-    environment: {existingSecret: claude-sandbox-managed-agents, vaultPath: claude-sandbox/managed-agents}
     maxIdle: 120s
     logFormat: text
-    env: []
-    persistence: {workspace: {size: 5Gi, storageClass: standard}, home: {size: 1Gi, storageClass: standard}, keep: false}
-    resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+  disabled-one:
+    kind: workspace
+    enabled: false

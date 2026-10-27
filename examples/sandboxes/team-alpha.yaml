@@ -1,0 +1,15 @@
+# A map file: several definitions in one file, each under its name.
+alpha-api:
+  kind: workspace
+  repo: https://github.com/example/alpha-api.git
+  extraAllowedDomains: ["artifacts.example.internal:443"]
+  remoteControl:
+    spawn: worktree
+    permissionMode: acceptEdits
+alpha-worker:
+  kind: managed-agents-worker
+  environment:
+    existingSecret: alpha-managed-agents
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 8Gi}

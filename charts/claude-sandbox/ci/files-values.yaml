@@ -1,0 +1,5 @@
+# helm lint/template values: no inline sandboxes; definitions come from the files the test
+# copies into sandboxes/ (see .github/workflows/chart.yml and examples/sandboxes/).
+image:
+  tag: sha-test
+sandboxes: {}

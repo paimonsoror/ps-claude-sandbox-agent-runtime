@@ -35,8 +35,20 @@ jobs:
             helm template cs charts/claude-sandbox -n claude-sandbox -f "$f" > /tmp/out.yaml
             grep -c '^kind:' /tmp/out.yaml
           done
-      - name: Render with defaults
-        run: helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test > /dev/null
+      - name: Render with defaults (no sandboxes defined)
+        run: |
+          n=$(helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test | grep -c '^kind:')
+          [ "$n" = "1" ] || { echo "expected only the ServiceAccount, got $n objects"; exit 1; }
+      - name: Render from packaged definition files
+        run: |
+          cp examples/sandboxes/*.yaml charts/claude-sandbox/sandboxes/
+          helm template cs charts/claude-sandbox -n claude-sandbox -f charts/claude-sandbox/ci/files-values.yaml > /tmp/files.yaml
+          rm -f charts/claude-sandbox/sandboxes/*.yaml
+          grep -q 'name: cs-claude-sandbox-alpha-api$' /tmp/files.yaml
+          grep -q 'name: cs-claude-sandbox-homelab$' /tmp/files.yaml
+          ! grep -q 'name: cs-claude-sandbox-worker$' /tmp/files.yaml   # enabled: false in its file
+      - name: Render from several per-sandbox values files
+        run: helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test -f examples/values/homelab.yaml -f examples/values/worker.yaml | grep -q 'name: cs-claude-sandbox-homelab$'
 
   publish:
     needs: lint
@@ -52,7 +64,9 @@ jobs:
       - name: Login
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Package and push
+        # The published package must carry no sandbox definitions of its own.
         run: |
+          ls charts/claude-sandbox/sandboxes/ | grep -v README.md && { echo "sandboxes/ must hold no definitions in the published chart"; exit 1; }
           helm package charts/claude-sandbox -d /tmp/pkg
           helm push /tmp/pkg/claude-sandbox-*.tgz "oci://ghcr.io/${{ github.repository_owner }}/charts"
           echo "pushed oci://ghcr.io/${{ github.repository_owner }}/charts/claude-sandbox:$(sed -n 's/^version: *//p' charts/claude-sandbox/Chart.yaml)" >> "$GITHUB_STEP_SUMMARY"

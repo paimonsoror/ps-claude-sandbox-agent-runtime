@@ -1,0 +1,9 @@
+# One workspace. Everything not stated comes from sandboxDefaults.workspace.
+# As a packaged file: copy into charts/claude-sandbox/sandboxes/. As a values file:
+# `helm ... -f` a file whose content is `sandboxes: {homelab: {...}}` (see ../values/).
+kind: workspace
+repo: https://github.com/paimonsoror/homelab-charts.git
+remoteControl:
+  spawn: worktree
+  capacity: 8
+  permissionMode: default

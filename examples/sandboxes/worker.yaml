@@ -1,0 +1,5 @@
+# One Managed Agents worker, disabled until its environment key Secret exists.
+kind: managed-agents-worker
+enabled: false
+environment:
+  existingSecret: claude-sandbox-managed-agents

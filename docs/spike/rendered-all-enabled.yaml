@@ -51,8 +51,15 @@ data:
           "claude.com",
           "platform.claude.com",
           "sso.claude.com",
+          "code.claude.com",
           "github.com",
-          "*.github.com"
+          "*.github.com",
+          "*.githubusercontent.com",
+          "registry.npmjs.org",
+          "*.npmjs.org",
+          "pypi.org",
+          "files.pythonhosted.org",
+          "*.sororlab.dev:443"
         ],
         "deniedDomains": [],
         "deniedResolvedAddresses": [
@@ -256,7 +263,7 @@ spec:
         claude-sandbox/name: homelab
         claude-sandbox/kind: workspace
       annotations:
-        checksum/config: 335c954642aa9f77be734572752726e7503283c69e4d19ddd8cb69e26d844e66
+        checksum/config: dfc747ac2f3780364321c25b327c53167daa95eb69d1eeb22754f7a4bc51e288
     spec:
       # Pod user namespace: container uid 0 is an unprivileged host uid (ADR-0003).
       hostUsers: false
@@ -548,8 +555,15 @@ spec:
         - matchName: "claude.com"
         - matchName: "platform.claude.com"
         - matchName: "sso.claude.com"
+        - matchName: "code.claude.com"
         - matchName: "github.com"
         - matchPattern: "*.github.com"
+        - matchPattern: "*.githubusercontent.com"
+        - matchName: "registry.npmjs.org"
+        - matchPattern: "*.npmjs.org"
+        - matchName: "pypi.org"
+        - matchName: "files.pythonhosted.org"
+        - matchPattern: "*.sororlab.dev"
       toPorts:
         - ports:
             - port: "443"

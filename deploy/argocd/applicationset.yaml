@@ -1,0 +1,57 @@
+# One ArgoCD Application per sandbox directory (ADR-0016).
+#
+# Layout in the definitions repository (here: homelab-charts):
+#   manifests/claude-sandboxes/
+#     applicationset.yaml        this file
+#     common.yaml                values shared by every sandbox (image tag, isolation, network)
+#     sandboxes/<name>/values.yaml   one sandbox: `sandboxes: { <name>: { kind: ..., ... } }`
+#
+# Adding a sandbox = adding a directory. Each Application installs the same OCI chart with two
+# sources: the chart, and the git repository referenced as `defs` for the values files.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: claude-sandboxes
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    # Removing a directory deletes its Application and, with prune, its objects (PVCs are
+    # kept by the chart's resource-policy annotation).
+    preserveResourcesOnDeletion: false
+  generators:
+    - git:
+        repoURL: https://github.com/paimonsoror/homelab-charts
+        revision: HEAD
+        directories:
+          - path: manifests/claude-sandboxes/sandboxes/*
+  template:
+    metadata:
+      name: "claude-sandbox-{{ .path.basename }}"
+      labels:
+        claude-sandbox/name: "{{ .path.basename }}"
+    spec:
+      project: default
+      sources:
+        - repoURL: ghcr.io/paimonsoror/charts
+          chart: claude-sandbox
+          targetRevision: 0.1.0
+          helm:
+            releaseName: "claude-sandbox-{{ .path.basename }}"
+            valueFiles:
+              - $defs/manifests/claude-sandboxes/common.yaml
+              - "$defs/{{ .path.path }}/values.yaml"
+        - repoURL: https://github.com/paimonsoror/homelab-charts
+          targetRevision: HEAD
+          ref: defs
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: claude-sandbox
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
