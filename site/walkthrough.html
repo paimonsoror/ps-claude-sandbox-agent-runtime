@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Walkthrough · Claude Sandbox Runtime</title>
+<meta name="description" content="Step by step: deploying the chart, the one-time workspace bootstrap, creating a Managed Agents environment and key, the Secret, enabling the worker, and verifying each step, with the exact commands and their real output.">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js"></script>
+<style>
+  .term { background: #1f1e1d; color: #f0ede6; border-radius: 10px; padding: 14px 16px; font-family: var(--mono); font-size: .8rem; line-height: 1.55; overflow-x: auto; white-space: pre; margin: 10px 0 16px; border: 1px solid #3b3733; }
+  .term .p { color: #e8906e; } .term .o { color: #a8a298; } .term .ok { color: #7fb37a; } .term .bad { color: #e07068; } .term .k { color: #8fb0d8; }
+  .stepgrid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 20px; align-items: start; margin: 14px 0 6px; }
+  @media (max-width: 980px) { .stepgrid { grid-template-columns: 1fr; } }
+  .stepgrid > * { min-width: 0; }
+  .who-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+  .checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .checklist li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .checklist .tick { width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--ok); color: var(--ok); font-size: .8rem; display: grid; place-items: center; font-weight: 800; }
+</style>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero" style="padding-bottom:20px">
+  <div class="wrap">
+    <span class="eyebrow">Walkthrough</span>
+    <h1>From a merged entry to a session on your phone, <span>step by step</span></h1>
+    <p class="lede">Every command below ran on the homelab on 2026-10-27 and the output panels show what it printed. The diagrams show who talks to whom at each step. The parts that need a human (a browser login, a key from the Console) are marked, and nothing here ever puts a credential in git or in chat.</p>
+    <div class="who-row">
+      <span class="pill idp">you: laptop, phone, Console</span><span class="pill">the pod on the cluster</span><span class="pill sn">Anthropic: relay, API, work queue</span><span class="pill key">secrets, created out of git</span>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap">
+    <span class="eyebrow">Before you start</span>
+    <h2>What has to be true</h2>
+    <ul class="checklist">
+      <li><span class="tick">✓</span><span>The app-of-apps entry <code>claude-sandboxes</code> is merged and the ApplicationSet has generated <code>claude-sandbox-homelab</code> (Synced, Healthy). Check: <code>kubectl -n argocd get application -l claude-sandbox/name</code>.</span></li>
+      <li><span class="tick">✓</span><span>The image and chart are published and public: <code>ghcr.io/paimonsoror/claude-sandbox:sha-…</code> and <code>oci://ghcr.io/paimonsoror/charts/claude-sandbox:0.1.0</code>.</span></li>
+      <li><span class="tick">✓</span><span>You have a claude.ai subscription for the workspace (Pro, Max, Team or Enterprise), and a Claude Console account for the Managed Agents worker.</span></li>
+      <li><span class="tick">✓</span><span><code>kubectl</code> access to the cluster. On the node: <code>sudo k3s kubectl</code>.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="workspace">
+  <div class="wrap">
+    <span class="eyebrow">Part 1 · the workspace</span>
+    <h2>Four steps, two of them one-time</h2>
+    <div class="stage-controls">
+      <button class="btn small" id="ws-prev">← Back</button>
+      <button class="btn small" id="ws-next">Next →</button>
+      <button class="btn small" id="ws-replay">↻ Replay</button>
+      <span class="spacer"></span>
+      <span class="muted" style="font-size:.8rem">Steps advance on their own; use the buttons to linger.</span>
+    </div>
+    <div class="stage" id="ws-stage"><div class="caption">Starting…</div></div>
+    <div class="steps" id="ws-steps"></div>
+    <div class="progress" id="ws-progress"><i></i></div>
+
+    <h3>Step 1 · Watch the pod come up and wait for a login</h3>
+    <div class="stepgrid">
+      <div>
+        <p>ArgoCD creates the PVCs, the ConfigMap, the network policy and the Deployment. The entrypoint clones the repository named in the sandbox's values into the empty <code>/workspace</code> volume, pre-trusts it for Claude Code, and then waits. It does not crash-loop: Remote Control needs a real claude.ai login, which only you can produce.</p>
+        <div class="term"><span class="p">$</span> kubectl -n claude-sandbox get pods
+<span class="o">NAME                                     READY   STATUS    RESTARTS   AGE
+claude-sandbox-homelab-7bff448f4-zt9vv   1/1     Running   0          10m</span>
+<span class="p">$</span> kubectl -n claude-sandbox logs -f deploy/claude-sandbox-homelab
+<span class="o">[sandbox-entrypoint] cloning https://github.com/paimonsoror/homelab-charts.git into /workspace
+Cloning into '/workspace'...
+[sandbox-entrypoint] sandbox kind=workspace wrap=srt srt=0.0.81 claude=2.1.311 (Claude Code) ant=ant version 2.3.0
+[sandbox-entrypoint] waiting for a claude.ai login at /home/agent/.claude/.credentials.json; run: kubectl exec -it &lt;pod&gt; -- claude auth login</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The pod is unprivileged on the host (its root maps to host uid 3707240448), the root filesystem is read-only, and the network policy already applies: the clone reached <code>github.com</code> on 443 and nothing else. No Anthropic credential exists in the cluster yet.</p><p class="muted">If the log shows a <code>Resolving timed out</code> or a slow clone, check the DNS rule's port against the resolver pods; see Troubleshooting below.</p></div>
+    </div>
+
+    <h3>Step 2 · Log in once (you, with a browser) <span class="pill idp">human step</span></h3>
+    <div class="stepgrid">
+      <div>
+        <p>The pod has no browser, so Claude Code prints a URL and expects a code back. Open the URL on your laptop, approve, paste the code into the terminal. The credential lands on the home volume with mode 0600 and survives pod restarts. A long-lived token from <code>claude setup-token</code> would not work here: the docs say it "can't establish Remote Control sessions".</p>
+        <div class="term"><span class="p">$</span> kubectl -n claude-sandbox exec -it deploy/claude-sandbox-homelab -- claude auth login
+<span class="o">Browser didn't open? Use the url below to sign in:
+https://claude.ai/oauth/authorize?code=true&amp;client_id=…
+Paste code here if prompted &gt; </span><span class="k">[paste the code]</span>
+<span class="ok">Login successful</span>
+<span class="p">$</span> kubectl -n claude-sandbox exec deploy/claude-sandbox-homelab -- claude auth status; echo $?
+<span class="ok">0</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The entrypoint's wait loop notices <code>.credentials.json</code> on its next 30-second check and starts <code>srt -- claude remote-control</code>. The login is the owner's own subscription; the sandbox can spend it and nothing else. Renewal, when Claude Code warns of expiry, is the same command again.</p></div>
+    </div>
+
+    <h3>Step 3 · Answer the one-time confirmation <span class="pill idp">human step</span></h3>
+    <div class="stepgrid">
+      <div>
+        <p>Remote Control asks once per machine whether to enable it. There is no documented way to pre-answer, so the pod keeps a TTY and you attach to it. Answer <code>y</code>, then detach with <kbd>Ctrl-P</kbd> <kbd>Ctrl-Q</kbd>. Never <kbd>Ctrl-C</kbd>: that stops the server.</p>
+        <div class="term"><span class="p">$</span> kubectl -n claude-sandbox attach -it deploy/claude-sandbox-homelab
+<span class="o">[sandbox-entrypoint] starting claude remote-control --spawn worktree --capacity 8 --permission-mode default --remote-control-session-name-prefix homelab
+Enable Remote Control? (y/n) </span><span class="k">y</span>
+<span class="o">Take this session with you and pick up right where you left off on any device.
+Open the Code tab in the Claude mobile app, visit claude.ai/code in a browser,
+or ask Claude to work in this folder from one of your projects on claude.ai.
+
+The session keeps running on this machine. Use your other devices as a remote
+control. Press Ctrl+C to stop.</span>
+<span class="k">[Ctrl-P Ctrl-Q]</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The server holds an outbound WebSocket to Anthropic's relay. The process tree is <code>tini → srt → socat relays → claude remote-control</code>. Every session it creates runs inside the same bubblewrap namespaces as the server itself.</p><div class="term" style="margin:10px 0 0"><span class="o">PID  PPID  COMMAND
+  1     0  /usr/bin/tini -- /usr/local/bin/sandbox-entrypoint
+  7     1  node /usr/local/bin/srt --settings /etc/srt/settings.json -- claude remote-control …
+ 49     7   \_ socat UNIX-LISTEN:/tmp/claude-http-….sock … TCP:localhost:35753
+ 63    61      \_ socat TCP6-LISTEN:3128 … UNIX-CONNECT:/tmp/claude-http-….sock
+ 64    62      \_ socat TCP6-LISTEN:1080 … UNIX-CONNECT:/tmp/claude-http-….sock
+ 67    66          \_ claude remote-control --spawn worktree --capacity 8 …</span></div></div>
+    </div>
+
+    <h3>Step 4 · Open the session from your phone and verify the boundary</h3>
+    <div class="stepgrid">
+      <div>
+        <p>In the Claude app's Code tab or at claude.ai/code the session appears as <code>homelab-&lt;adjective&gt;-&lt;animal&gt;</code>. Ask it to run the probes; every one of them was also run as a fresh <code>srt</code> wrap under the same policy, which is what the output below shows.</p>
+        <div class="term"><span class="p">$</span> id -u; cat /proc/self/uid_map; ls /proc | grep -cE '^[0-9]+$'
+<span class="o">1000
+      1000       1000          1
+4</span>
+<span class="p">$</span> curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/        <span class="ok">200</span>
+<span class="p">$</span> curl -s -o /dev/null -w '%{http_code}\n' https://example.com/           <span class="bad">000  not listed</span>
+<span class="p">$</span> curl -s -o /dev/null -w '%{http_code}\n' http://10.43.0.1/              <span class="bad">000  cluster API</span>
+<span class="p">$</span> curl -s -o /dev/null -w '%{http_code}\n' https://truenas.sororlab.dev/  <span class="bad">000  LAN name</span>
+<span class="p">$</span> touch /etc/x                       <span class="bad">Read-only file system</span>
+<span class="p">$</span> echo x &gt;&gt; /workspace/.bashrc        <span class="bad">Permission denied</span>
+<span class="p">$</span> echo x &gt; /workspace/.git/hooks/post-checkout   <span class="bad">Read-only file system</span>
+<span class="p">$</span> cat /etc/srt/settings.json         <span class="bad">No such file or directory</span>
+<span class="p">$</span> unshare -Ur true                   <span class="bad">Operation not permitted</span>
+<span class="p">$</span> touch /workspace/ok &amp;&amp; git -C /workspace status --short | head -1   <span class="ok">ok</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The workspace is done. Sessions get their own git worktree, the owner approves tool calls from the phone in <code>default</code> permission mode, and <code>bypassPermissions</code> cannot be turned on. A pod restart (image roll, node reboot) comes back without asking anything again.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="worker">
+  <div class="wrap">
+    <span class="eyebrow">Part 2 · the Managed Agents worker</span>
+    <h2>An environment, a key, a Secret, one line in git</h2>
+    <div class="stage-controls">
+      <button class="btn small" id="wk-prev">← Back</button>
+      <button class="btn small" id="wk-next">Next →</button>
+      <button class="btn small" id="wk-replay">↻ Replay</button>
+    </div>
+    <div class="stage" id="wk-stage"><div class="caption">Starting…</div></div>
+    <div class="steps" id="wk-steps"></div>
+    <div class="progress" id="wk-progress"><i></i></div>
+
+    <h3>Step 5 · Create a self-hosted environment <span class="pill idp">human step, Console</span></h3>
+    <div class="stepgrid">
+      <div>
+        <p>In the Claude Console open <b>Environments</b>, click <b>Create environment</b>, and under <b>Hosting</b> choose <b>Self-hosted</b>. Note the id, <code>env_…</code>. Managed Agents is API-billed, so this is a Console account, not the claude.ai subscription the workspace uses. The same thing from the API:</p>
+        <div class="term"><span class="p">$</span> curl -sS https://api.anthropic.com/v1/environments \
+    -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+    -H "anthropic-beta: managed-agents-2026-04-01" -H "content-type: application/json" \
+    -d '{"name": "homelab", "config": {"type": "self_hosted"}}'
+<span class="o">{"id": "env_…", "name": "homelab", "config": {"type": "self_hosted"}, …}</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>A self-hosted environment is a work queue. Sessions that target it wait in the queue until a worker claims them; without a worker they do not fail, they wait.</p></div>
+    </div>
+
+    <h3>Step 6 · Generate the environment key <span class="pill idp">human step, Console only</span></h3>
+    <div class="stepgrid">
+      <div>
+        <p>Open the environment and click <b>Generate environment key</b>. There is no API for this. The key, <code>sk-ant-oat01-…</code>, authorises exactly two things: claiming work from this environment's queue and posting results back. It is not your organisation's API key, and that key should never reach the cluster.</p>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>Anthropic's security model for self-hosted sandboxes asks that the key live in a secrets manager and be rotated on suspicion. On the homelab it lives in a Kubernetes Secret created by hand; the chart ships an ExternalSecret template for Vault when that is wanted.</p></div>
+    </div>
+
+    <h3>Step 7 · Create the Secret, outside git</h3>
+    <div class="stepgrid">
+      <div>
+        <div class="term"><span class="p">$</span> kubectl -n claude-sandbox create secret generic claude-sandbox-managed-agents \
+    --from-literal=ANTHROPIC_ENVIRONMENT_ID=env_… \
+    --from-literal=ANTHROPIC_ENVIRONMENT_KEY=sk-ant-oat01-…
+<span class="o">secret/claude-sandbox-managed-agents created</span>
+<span class="p">$</span> kubectl -n claude-sandbox get secret claude-sandbox-managed-agents -o go-template='{{range $k,$v := .data}}{{$k}} {{end}}'
+<span class="o">ANTHROPIC_ENVIRONMENT_ID ANTHROPIC_ENVIRONMENT_KEY</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The worker's Deployment references this Secret by name through <code>envFrom</code>. The chart never creates it, so a fresh install without it leaves the worker pod unschedulable rather than running without a key.</p></div>
+    </div>
+
+    <h3>Step 8 · Enable the worker in git</h3>
+    <div class="stepgrid">
+      <div>
+        <p>One line in the sandbox's directory, and (here) the image tag in <code>common.yaml</code> rolled in the same commit. Merge; the ApplicationSet's Application syncs.</p>
+        <div class="term"><span class="p">$</span> git -C ~/homelab-charts diff --stat
+<span class="o"> manifests/claude-sandboxes/common.yaml                  | 2 +-
+ manifests/claude-sandboxes/sandboxes/worker/values.yaml | 2 +-</span>
+<span class="p">$</span> cat manifests/claude-sandboxes/sandboxes/worker/values.yaml
+<span class="o">sandboxes:
+  worker:
+    kind: managed-agents-worker
+    enabled: true</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The worker gets the smallest allowlist of the two kinds: <code>api.anthropic.com</code> and nothing else, in both the srt proxy and the Cilium policy.</p></div>
+    </div>
+
+    <h3>Step 9 · Verify it polls</h3>
+    <div class="stepgrid">
+      <div>
+        <div class="term" id="wk-log"><span class="p">$</span> kubectl -n claude-sandbox logs deploy/claude-sandbox-worker
+<span class="o">[sandbox-entrypoint] sandbox kind=managed-agents-worker wrap=srt srt=0.0.81 claude=2.1.311 (Claude Code) ant=ant version 2.3.0
+[sandbox-entrypoint] starting ant beta:worker poll for environment env_…
+{"time":"2026-10-27T01:21:21Z","level":"INFO","msg":"idle; polling for work","component":"work-poller","environment_id":"env_…"}</span>
+<span class="p">$</span> kubectl -n claude-sandbox get cnp claude-sandbox-worker -o jsonpath='{range .spec.egress[*]}{.toFQDNs[*].matchName} {.toPorts[0].ports[*].port}{"\n"}{end}'
+<span class="o"> 53
+ 5353
+api.anthropic.com 443</span></div>
+        <p>From your laptop, where the organisation API key lives, confirm the queue sees a worker:</p>
+        <div class="term"><span class="p">$</span> ant beta:environments:work stats --environment-id env_…
+<span class="o">workers_polling: </span><span class="ok">1</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>Every tool call a session makes runs inside this pod, under srt, in <code>/workspace</code>. Sessions of this environment share that directory in v1; one pod per session is the planned next step.</p></div>
+    </div>
+
+    <h3>Step 10 · Run a first session</h3>
+    <div class="stepgrid">
+      <div>
+        <p>With an agent id from the Managed Agents quickstart, create a session that targets the environment and send it a task. The file it writes lands in the worker's <code>/workspace</code>.</p>
+        <div class="term"><span class="p">$</span> ant beta:sessions create --agent "$AGENT_ID" --environment-id env_…
+<span class="p">$</span> ant beta:sessions:events send --session-id "$SESSION_ID" &lt;&lt;'YAML'
+events:
+  - type: user.message
+    content:
+      - type: text
+        text: Write the output of "uname -a" to hello.txt in your working directory.
+YAML
+<span class="p">$</span> kubectl -n claude-sandbox exec deploy/claude-sandbox-worker -- cat /workspace/hello.txt
+<span class="o">Linux claude-sandbox-worker-… 6.8.0-138-generic #138-Ubuntu SMP … x86_64 GNU/Linux</span></div>
+      </div>
+      <div class="card"><h3>What is true at this point</h3><p>The kernel string is the node's: the tool call executed in the homelab, inside the sandbox. The agent loop and the model stayed on Anthropic's side; only tool inputs and outputs crossed.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="troubleshooting">
+  <div class="wrap">
+    <span class="eyebrow">Troubleshooting</span>
+    <h2>The three things that actually went wrong</h2>
+    <div class="cards">
+      <div class="card reveal"><h3>Application stuck in Sync: Unknown</h3><p><code>ComparisonError … pvc.yaml: index of untyped nil</code>. The first 0.1.0 package had no per-kind defaults and the entry omitted <code>persistence</code>. Fixed by <code>sandboxDefaults</code> (ADR-0016). If you see it on a new field: the definition names something the kind's defaults do not cover.</p></div>
+      <div class="card reveal d1"><h3>Slow clone, curl "Resolving timed out"</h3><p>Hubble showed <code>Policy denied DROPPED</code> to <code>telltaledns-0:5353</code>. The policy matches resolver <i>pods</i>, which listen on 5353 behind a :53 Service. Set <code>network.policy.dns.endpoints[].port</code> to the pod port. Check with <code>hubble observe --namespace claude-sandbox --verdict DROPPED</code>.</p></div>
+      <div class="card reveal d2"><h3>Republished chart, nothing changes</h3><p>ArgoCD's repo-server caches an OCI chart by version. After moving <code>chart-v0.1.0</code>: <code>kubectl -n argocd rollout restart deploy/argocd-repo-server</code>, then annotate the Applications with <code>argocd.argoproj.io/refresh=hard</code>. Confirm the live object changed before trusting Synced.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script>
+(function () {
+  const F = window.Site.Flow;
+  /* Part 1: the workspace bootstrap */
+  const wsSpec = {
+    w: 1040, h: 330, nw: 130, nh: 50, label: "Workspace bootstrap: cluster, pod, laptop, Anthropic, phone",
+    lanes: [["Git / ArgoCD", 100], ["Pod", 340], ["You", 600], ["Anthropic", 860]],
+    nodes: [
+      { id: "argo", label: "ArgoCD", sub: "ApplicationSet → Application", x: 100, y: 90 },
+      { id: "github", label: "github.com", sub: "allowed on 443", x: 100, y: 240, kind: "sn" },
+      { id: "pod", label: "entrypoint", sub: "clone · wait for login", x: 340, y: 90 },
+      { id: "srv", label: "claude remote-control", sub: "inside srt", x: 340, y: 240, kind: "maestro" },
+      { id: "laptop", label: "laptop: kubectl", sub: "exec · attach", x: 600, y: 90, kind: "idp" },
+      { id: "phone", label: "phone / browser", sub: "claude.ai/code", x: 600, y: 240, kind: "idp" },
+      { id: "oauth", label: "claude.ai OAuth", sub: "approve → code", x: 860, y: 90, kind: "sn" },
+      { id: "relay", label: "Remote Control relay", sub: "outbound WebSocket", x: 860, y: 240, kind: "sn" },
+    ],
+    edges: [
+      { id: "argo-pod", from: "argo", to: "pod" },
+      { id: "pod-github", from: "pod", to: "github", kind: "c", bend: 40 },
+      { id: "laptop-pod", from: "laptop", to: "pod" },
+      { id: "laptop-oauth", from: "laptop", to: "oauth" },
+      { id: "pod-srv", from: "pod", to: "srv", kind: "v" },
+      { id: "laptop-srv", from: "laptop", to: "srv", kind: "c", bend: 40, dashed: true },
+      { id: "srv-relay", from: "srv", to: "relay", kind: "c", bend: 0 },
+      { id: "phone-relay", from: "phone", to: "relay" },
+    ],
+  };
+  const wsFlow = F.mount(document.getElementById("ws-stage"), wsSpec);
+  const wsSteps = [
+    { caption: "Step 1 · ArgoCD creates the pod; the entrypoint clones the repository through the egress policy and then waits for a login.", nodes: { argo: "active" }, packets: [{ edge: "argo-pod", label: "sync" }], after: { pod: "active" } },
+    { caption: "Step 1 · The clone goes out on 443 to github.com, an allowed name; the pod's first egress proves the policy.", packets: [{ edge: "pod-github", label: "git clone", cls: "sn" }, { edge: "pod-github", reverse: true, label: "repo", cls: "ok" }], after: { github: "ok" } },
+    { caption: "Step 2 · You run `claude auth login` over kubectl exec; the pod prints a URL you open on the laptop.", nodes: { laptop: "active-idp" }, packets: [{ edge: "laptop-pod", label: "exec: auth login", cls: "idp" }, { edge: "laptop-pod", reverse: true, label: "URL", cls: "idp" }] },
+    { caption: "Step 2 · claude.ai approves and shows a code; you paste it back. The credential lands on the home volume, mode 0600.", packets: [{ edge: "laptop-oauth", label: "approve", cls: "idp" }, { edge: "laptop-oauth", reverse: true, label: "code", cls: "sn" }, { edge: "laptop-pod", label: "paste code", cls: "key" }], after: { oauth: "ok", pod: "ok" } },
+    { caption: "Step 3 · The entrypoint starts `srt -- claude remote-control`; you attach once and answer the confirmation.", packets: [{ edge: "pod-srv", label: "exec srt" }, { edge: "laptop-srv", label: "attach: y", cls: "idp" }], after: { srv: "active-maestro" } },
+    { caption: "Step 3 · The server registers with Anthropic's Remote Control relay over an outbound WebSocket. Nothing listens in the pod.", packets: [{ edge: "srv-relay", label: "register", cls: "maestro" }], after: { relay: "active-sn" } },
+    { caption: "Step 4 · From the phone the session appears as homelab-<adjective>-<animal>; messages travel phone → relay → server, and tool calls run inside the sandbox.", nodes: { phone: "active-idp" }, packets: [{ edge: "phone-relay", label: "message", cls: "idp" }, { edge: "srv-relay", reverse: true, label: "turn", cls: "sn" }], after: { srv: "ok" }, hold: 1600 },
+  ];
+  const wsStepsEl = document.getElementById("ws-steps"); wsStepsEl.innerHTML = wsSteps.map((s, i) => `<button type="button">${i + 1}</button>`).join("");
+  F.player(wsFlow, wsSteps, { loop: true, stepsEl: wsStepsEl, progressEl: document.getElementById("ws-progress"), replayEl: document.getElementById("ws-replay"), nextEl: document.getElementById("ws-next"), prevEl: document.getElementById("ws-prev") }).play(0);
+
+  /* Part 2: the Managed Agents worker */
+  const wkSpec = {
+    w: 1040, h: 330, nw: 130, nh: 50, label: "Managed Agents worker: Console, Secret, git, pod, queue",
+    lanes: [["You", 100], ["Git / cluster", 340], ["Pod", 600], ["Anthropic", 860]],
+    nodes: [
+      { id: "console", label: "Claude Console", sub: "environment · key", x: 100, y: 90, kind: "idp" },
+      { id: "laptop", label: "laptop", sub: "kubectl · ant · API key", x: 100, y: 240, kind: "idp" },
+      { id: "secret", label: "Secret", sub: "claude-sandbox-managed-agents", x: 340, y: 90, kind: "key" },
+      { id: "git", label: "git: enabled: true", sub: "sandboxes/worker/values.yaml", x: 340, y: 240 },
+      { id: "worker", label: "ant beta:worker poll", sub: "inside srt", x: 600, y: 165, kind: "maestro" },
+      { id: "queue", label: "Work queue", sub: "env_…", x: 860, y: 90, kind: "sn" },
+      { id: "session", label: "Session", sub: "agent loop + model", x: 860, y: 240, kind: "sn" },
+    ],
+    edges: [
+      { id: "console-laptop", from: "console", to: "laptop", kind: "v", dashed: true },
+      { id: "laptop-secret", from: "laptop", to: "secret", kind: "c", bend: -40 },
+      { id: "laptop-git", from: "laptop", to: "git" },
+      { id: "secret-worker", from: "secret", to: "worker", kind: "c", bend: 30, dashed: true },
+      { id: "git-worker", from: "git", to: "worker", kind: "c", bend: -30 },
+      { id: "worker-queue", from: "worker", to: "queue", kind: "c", bend: -30 },
+      { id: "session-queue", from: "session", to: "queue", kind: "v", dashed: true },
+      { id: "worker-session", from: "worker", to: "session", kind: "c", bend: 30 },
+      { id: "laptop-session", from: "laptop", to: "session", kind: "c", bend: 90, dashed: true },
+    ],
+  };
+  const wkFlow = F.mount(document.getElementById("wk-stage"), wkSpec);
+  const wkSteps = [
+    { caption: "Step 5 · In the Console you create a self-hosted environment: a work queue with an id env_….", nodes: { console: "active-idp" }, after: { console: "active-idp" } },
+    { caption: "Step 6 · You generate the environment key in the Console. It is scoped to this queue; the org API key stays on your laptop.", packets: [{ edge: "console-laptop", label: "env id + key", cls: "key" }], after: { laptop: "active-idp" } },
+    { caption: "Step 7 · kubectl creates the Secret in the namespace, outside git.", packets: [{ edge: "laptop-secret", label: "create secret", cls: "key" }], after: { secret: "active-key" } },
+    { caption: "Step 8 · One line in git flips the worker on; ArgoCD creates the pod, which reads the Secret through envFrom.", packets: [{ edge: "laptop-git", label: "enabled: true" }, { edge: "git-worker", label: "sync" }, { edge: "secret-worker", label: "envFrom", cls: "key" }], after: { git: "active", worker: "active-maestro" } },
+    { caption: "Step 9 · The worker long-polls the queue over api.anthropic.com:443, the only name it may reach. `work stats` from the laptop shows workers_polling: 1.", packets: [{ edge: "worker-queue", label: "poll", cls: "maestro" }, { edge: "worker-queue", reverse: true, label: "empty", cls: "sn" }], after: { queue: "active-sn" } },
+    { caption: "Step 10 · A session created from the laptop is enqueued; the worker claims it and runs each tool call inside the sandbox, posting results back.", packets: [{ edge: "laptop-session", label: "create session", cls: "idp" }, { edge: "session-queue", label: "work item", cls: "sn" }, { edge: "worker-queue", reverse: true, label: "claim", cls: "sn" }, { edge: "worker-session", label: "bash result", cls: "ok" }], after: { session: "ok", worker: "ok" }, hold: 1800 },
+  ];
+  const wkStepsEl = document.getElementById("wk-steps"); wkStepsEl.innerHTML = wkSteps.map((s, i) => `<button type="button">${i + 5}</button>`).join("");
+  F.player(wkFlow, wkSteps, { loop: true, stepsEl: wkStepsEl, progressEl: document.getElementById("wk-progress"), replayEl: document.getElementById("wk-replay"), nextEl: document.getElementById("wk-next"), prevEl: document.getElementById("wk-prev") }).play(0);
+})();
+</script>
+</body>
+</html>

@@ -6,6 +6,7 @@
   const PAGES = [
     ["index.html", "Overview"],
     ["architecture.html", "Architecture"],
+    ["walkthrough.html", "Walkthrough"],
     ["evidence.html", "Evidence"],
     ["decisions.html", "Decisions"],
     ["controls.html", "Controls"],

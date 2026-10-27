@@ -120,7 +120,15 @@ done; the phase closes when the next image is rolled.
    `curl -sI https://api.github.com`.
 8. Record the results in `docs/verification.md`.
 
-## Phase 3: Managed Agents worker `todo`
+## Phase 3: Managed Agents worker `in progress`
+
+**Done 2026-10-27, steps 1 to 3:** the owner created the self-hosted environment and key in
+the Console and the Secret in the namespace; the worker was enabled in
+`sandboxes/worker/values.yaml` together with an image roll to `sha-c7e6050`
+(homelab-charts df7926a). `claude-sandbox-worker` is Synced and Healthy; the pod logs
+`idle; polling for work` for the environment; its policy allows DNS and `api.anthropic.com:443`
+only, with no dropped flows. Remaining: `workers_polling` from the laptop (step 4) and a first
+session (step 5), which needs an agent id.
 
 1. In the Claude Console: create an agent (or reuse one), create an environment with hosting
    `Self-hosted`, generate an environment key.

@@ -115,7 +115,18 @@
         <tr><td><code>touch /workspace/ok-from-sandbox</code>, <code>git status</code></td><td><span class="pill ok">ok</span></td></tr>
       </tbody>
     </table></div>
-    <p class="muted">Finding: srt's mount-point files for the denied shell startup files appear as untracked <code>.bashrc</code> and <code>.bash_profile</code> in the workspace while the server runs; the entrypoint now lists them in <code>.git/info/exclude</code>.</p>
+    <p class="muted">Finding: srt's mount-point files for the denied shell startup files appear as untracked <code>.bashrc</code> and <code>.bash_profile</code> in the workspace while the server runs; the entrypoint now lists the whole mandatory-deny set in <code>.git/info/exclude</code> (image <code>sha-c7e6050</code>).</p>
+    <h3>The worker</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Step</th><th>Observed</th></tr></thead>
+      <tbody>
+        <tr><td>Secret</td><td><code>claude-sandbox-managed-agents</code> with keys <code>ANTHROPIC_ENVIRONMENT_ID</code>, <code>ANTHROPIC_ENVIRONMENT_KEY</code>, created by the owner outside git</td></tr>
+        <tr><td>enable</td><td>one line in <code>sandboxes/worker/values.yaml</code>; <code>claude-sandbox-worker</code> Synced, Healthy; pod Running on <code>sha-c7e6050</code></td></tr>
+        <tr><td>log</td><td><code>starting ant beta:worker poll for environment env_…</code> then <code>{"level":"INFO","msg":"idle; polling for work","component":"work-poller"}</code></td></tr>
+        <tr><td>policy</td><td>DNS to the two resolvers (53, 5353) and <code>api.anthropic.com</code> on 443; nothing else; no dropped flows in Hubble</td></tr>
+        <tr><td>first session</td><td>pending an agent id (plan phase 3 step 5)</td></tr>
+      </tbody>
+    </table></div>
   </div>
 </section>
 
