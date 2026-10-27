@@ -48,7 +48,10 @@ jobs:
           grep -q 'name: cs-claude-sandbox-homelab$' /tmp/files.yaml
           ! grep -q 'name: cs-claude-sandbox-worker$' /tmp/files.yaml   # enabled: false in its file
       - name: Render from several per-sandbox values files
-        run: helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test -f examples/values/homelab.yaml -f examples/values/worker.yaml | grep -q 'name: cs-claude-sandbox-homelab$'
+        run: |
+          helm template cs charts/claude-sandbox -n claude-sandbox --set image.tag=sha-test \
+            -f examples/values/homelab.yaml -f examples/values/worker.yaml \
+            | grep -q 'name: cs-claude-sandbox-homelab$'
 
   publish:
     needs: lint
