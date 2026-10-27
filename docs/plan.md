@@ -47,7 +47,32 @@ resolver were dropped until the fallback to CoreDNS (Hubble: `Policy denied DROP
 `telltaledns-0:5353`). Each DNS endpoint now carries its port; after the republish and a hard
 refresh the probes from inside the pod (outside bubblewrap) read: `github.com:443 -> 200`,
 `api.anthropic.com:443 -> 404` (reached), `example.com:443 -> 000` (blocked),
-`192.168.3.3:443 -> 000` (blocked). Steps 4 to 8 below remain.
+`192.168.3.3:443 -> 000` (blocked).
+
+**Done 2026-10-27, steps 4 to 7:** the owner ran `claude auth login` and answered the Remote
+Control confirmation over `kubectl attach`; `claude auth status` exits 0; the process tree is
+`tini → srt → socat relays → claude remote-control --spawn worktree --capacity 8`. Boundary
+probes run as a fresh `srt --settings /etc/srt/settings.json -c …` wrap in the pod (the same
+policy the sessions get):
+
+| Probe | Result |
+|---|---|
+| `id -u; cat /proc/self/uid_map; ls /proc` | uid 1000, map `1000 1000 1`, 4 pids visible |
+| `curl https://api.github.com/` | 200 (allowed name) |
+| `curl https://example.com/` | 000 (not listed) |
+| `curl http://10.43.0.1/` | 000 (cluster API: resolved-address guard, CNI) |
+| `curl https://truenas.sororlab.dev/` | 000 (LAN name resolves to a private address) |
+| `touch /etc/x`, `touch /usr/local/bin/x` | read-only file system |
+| `echo x >> /workspace/.bashrc` | permission denied (mandatory deny) |
+| `echo x > /workspace/.git/hooks/post-checkout` | read-only file system (mandatory deny) |
+| `cat /etc/srt/settings.json` | no such file (denyRead) |
+| `unshare -Ur true` | operation not permitted |
+| `touch /workspace/ok-from-sandbox`, `git status` | ok |
+
+Finding: srt's mount-point files for the denied shell startup files show up as untracked
+`.bashrc` and `.bash_profile` in `/workspace` while the server runs. The entrypoint now adds
+those names to `.git/info/exclude`; the fix ships with the next image tag. Step 8 (this log)
+done; the phase closes when the next image is rolled.
 
 1. Create the optional GitHub token Secret (fine-grained PAT, contents + pull requests on the
    repositories the workspace will clone):

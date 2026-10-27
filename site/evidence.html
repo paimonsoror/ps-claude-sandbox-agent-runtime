@@ -97,7 +97,25 @@
         <tr><td>egress probes after the fix</td><td><code>github.com:443 → 200</code> · <code>api.anthropic.com:443 → 404</code> (reached) · <code>example.com:443 → 000</code> (blocked) · <code>192.168.3.3:443 → 000</code> (blocked)</td></tr>
       </tbody>
     </table></div>
-    <p class="muted">The Remote Control boundary probes from a phone session (inside bubblewrap) are recorded in <code>docs/plan.md</code> once the login is done.</p>
+    <h3>Inside the sandbox, after the login</h3>
+    <p>With the server up (<code>tini → srt → socat relays → claude remote-control</code>, <code>claude auth status</code> exit 0), each probe ran as a fresh <code>srt --settings /etc/srt/settings.json -c …</code> wrap in the pod, the same policy every session gets.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Probe</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><code>id -u; cat /proc/self/uid_map; ls /proc</code></td><td>uid 1000, map <code>1000 1000 1</code>, 4 pids visible</td></tr>
+        <tr><td><code>curl https://api.github.com/</code></td><td><span class="pill ok">200</span> allowed name</td></tr>
+        <tr><td><code>curl https://example.com/</code></td><td><span class="pill ok">blocked</span> not listed</td></tr>
+        <tr><td><code>curl http://10.43.0.1/</code> (cluster API)</td><td><span class="pill ok">blocked</span> resolved-address guard and CNI</td></tr>
+        <tr><td><code>curl https://truenas.sororlab.dev/</code> (LAN name)</td><td><span class="pill ok">blocked</span> resolves to a private address</td></tr>
+        <tr><td><code>touch /etc/x</code>, <code>touch /usr/local/bin/x</code></td><td><span class="pill ok">refused</span> read-only file system</td></tr>
+        <tr><td><code>echo x &gt;&gt; /workspace/.bashrc</code></td><td><span class="pill ok">refused</span> mandatory deny</td></tr>
+        <tr><td><code>echo x &gt; /workspace/.git/hooks/post-checkout</code></td><td><span class="pill ok">refused</span> mandatory deny</td></tr>
+        <tr><td><code>cat /etc/srt/settings.json</code></td><td><span class="pill ok">no such file</span> denyRead</td></tr>
+        <tr><td><code>unshare -Ur true</code></td><td><span class="pill ok">refused</span> nested user namespace</td></tr>
+        <tr><td><code>touch /workspace/ok-from-sandbox</code>, <code>git status</code></td><td><span class="pill ok">ok</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted">Finding: srt's mount-point files for the denied shell startup files appear as untracked <code>.bashrc</code> and <code>.bash_profile</code> in the workspace while the server runs; the entrypoint now lists them in <code>.git/info/exclude</code>.</p>
   </div>
 </section>
 

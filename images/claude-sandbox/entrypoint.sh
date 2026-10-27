@@ -39,6 +39,16 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 git config --global --add safe.directory /workspace >/dev/null 2>&1 || true
 
+# srt covers the shell startup files it denies with empty, read-only mount-point files that
+# exist for as long as the sandbox runs (README, "Write denies on paths that do not exist
+# yet"). Keep them out of git status without touching the repository's tracked files.
+if [ -d /workspace/.git ]; then
+  mkdir -p /workspace/.git/info
+  for f in .bashrc .bash_profile .profile .zshrc .zprofile .ripgreprc; do
+    grep -qxF "$f" /workspace/.git/info/exclude 2>/dev/null || echo "$f" >> /workspace/.git/info/exclude
+  done
+fi
+
 log "sandbox kind=${SANDBOX_KIND} wrap=${SANDBOX_WRAP} srt=$(srt --version 2>/dev/null || echo '?') claude=$(claude --version 2>/dev/null | head -1 || echo '?') ant=$(ant --version 2>/dev/null | head -1 || echo '?')"
 
 wrap() {
