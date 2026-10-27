@@ -130,9 +130,13 @@ tr:hover td { background: color-mix(in srgb, var(--text) 2%, transparent); }
 td p, td li { max-width: none; }
 
 /* Stage (animated SVG) */
-.stage { background: linear-gradient(180deg, var(--panel), var(--bg)); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; position: relative; overflow: hidden; }
+.stage { background: linear-gradient(180deg, var(--panel), var(--bg)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 0; position: relative; }
+/* The drawing keeps a readable minimum width and scrolls sideways on a phone instead of shrinking to unreadable text. */
+.flow-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .stage svg { width: 100%; height: auto; display: block; }
-.stage .caption { position: absolute; left: 14px; right: 14px; bottom: 10px; font-size: .8rem; color: var(--muted); }
+.stage .caption { border-top: 1px solid var(--line); margin: 8px -14px 0; padding: 14px 18px 16px; font-size: 1rem; line-height: 1.5; color: var(--text); min-height: 4.6em; background: var(--panel); border-radius: 0 0 var(--radius) var(--radius); }
+.hero.stacked .grid { grid-template-columns: 1fr; gap: 28px; }
+.hero.stacked .lede { max-width: 72ch; }
 .stage-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .stage-controls .spacer { flex: 1; }
 .steps { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
@@ -146,7 +150,7 @@ td p, td li { max-width: none; }
 .toggle button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--text); }
 
 /* Flow SVG classes (used by the Flow engine in site.js) */
-.flow .lane { fill: var(--muted); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; font-family: var(--font); }
+.flow .lane { fill: var(--muted); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; font-family: var(--font); }
 .flow .lane-line { stroke: var(--line); stroke-dasharray: 2 4; }
 .flow .edge { fill: none; stroke: var(--line-2); stroke-width: 1.6; opacity: .75; transition: stroke .3s, opacity .3s; }
 .flow .edge.dashed { stroke-dasharray: 4 5; opacity: .55; }
@@ -158,8 +162,8 @@ td p, td li { max-width: none; }
 .flow .edge.hot-ok { stroke: var(--ok); opacity: 1; }
 .flow .edge.hot-bad { stroke: var(--bad); opacity: 1; }
 .flow .node rect { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.4; transition: stroke .25s, fill .25s, filter .25s; }
-.flow .node text { fill: var(--text); font-family: var(--font); font-size: 12px; font-weight: 700; }
-.flow .node text.sub { fill: var(--muted); font-size: 9.5px; font-weight: 500; }
+.flow .node text { fill: var(--text); font-family: var(--font); font-size: 15px; font-weight: 700; }
+.flow .node text.sub { fill: var(--muted); font-size: 12px; font-weight: 500; }
 .flow .node.active rect { stroke: var(--accent); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 55%, transparent)); }
 .flow .node.active-sn rect { stroke: var(--accent-2); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent-2) 55%, transparent)); }
 .flow .node.active-key rect { stroke: var(--key); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--key) 55%, transparent)); }
@@ -177,14 +181,25 @@ td p, td li { max-width: none; }
 .flow .node.kind-group rect { fill: transparent; stroke: var(--line); stroke-dasharray: 3 4; }
 .flow .node.kind-group text { fill: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .flow .packet { filter: drop-shadow(0 0 6px currentColor); }
-.flow .plabel { font-family: var(--mono); font-size: 9px; fill: var(--bg); font-weight: 700; }
-.flow .plabel-bg { rx: 6; }
+.flow .plabel { font-family: var(--mono); font-size: 11.5px; fill: #fffaf5; font-weight: 700; }
+.flow .plabel-bg { opacity: .96; }
 .flow .badge { font-family: var(--mono); font-size: 9px; fill: var(--text); }
 
 /* Walkthrough */
-.walk { display: grid; grid-template-columns: 1.45fr 1fr; gap: 20px; align-items: start; }
-@media (max-width: 980px) { .walk { grid-template-columns: 1fr; } }
-.narrative { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-height: 300px; min-width: 0; }
+/* Diagram full width on top; the story and the log side by side underneath. */
+.walk { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+.walk > * { min-width: 0; }
+.narrative { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; align-items: start; }
+.narrative > .who, .narrative > h3, .narrative > p { grid-column: 1; }
+.narrative > .log { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
+@media (max-width: 880px) { .narrative { grid-template-columns: 1fr; } .narrative > .log { grid-column: 1; grid-row: auto; margin-top: 10px; } }
+.plain { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px; padding: 16px 18px; margin: 18px 0 4px; }
+.plain h3 { font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-deep); margin: 0 0 6px; }
+.plain p:last-child { margin-bottom: 0; }
+.glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.glossary div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.glossary dt { font-weight: 800; margin-bottom: 4px; }
+.glossary dd { margin: 0; color: var(--muted); font-size: .94rem; }
 .narrative h3 { margin-bottom: 6px; }
 .narrative .who { font-size: .78rem; color: var(--accent-deep); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .log { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-family: var(--mono); font-size: .78rem; line-height: 1.55; color: var(--text); margin-top: 14px; min-height: 90px; white-space: pre-wrap; word-break: break-word; }

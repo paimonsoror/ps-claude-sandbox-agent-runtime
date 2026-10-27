@@ -58,9 +58,10 @@
   const COLORS = { "": "var(--accent)", sn: "var(--accent-2)", key: "var(--key)", idp: "var(--idp)", maestro: "var(--maestro)", ok: "var(--ok)", bad: "var(--bad)" };
 
   function mount(container, spec) {
-    const NW = spec.nw || 124, NH = spec.nh || 50;
+    const NW = spec.nw || 140, NH = spec.nh || 58, PAD = 30;
     const byId = Object.fromEntries(spec.nodes.map(n => [n.id, n]));
-    const dim = n => ({ w: n.w || NW, h: n.h || NH });
+    const size = {};
+    const dim = n => size[n.id] || { w: n.w || NW, h: n.h || NH };
     function pathFor(e) {
       const a = byId[e.from], b = byId[e.to], da = dim(a), db = dim(b);
       if (e.kind === "v") {
@@ -82,28 +83,40 @@
       const mx = (x1 + x2) / 2;
       return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
     }
+    // The caption sits under the drawing, never on top of it.
     const keptCaption = container.querySelector(":scope > .caption");
     container.innerHTML = "";
-    const svg = el("svg", { viewBox: `0 0 ${spec.w} ${spec.h}`, class: "flow", role: "img", "aria-label": spec.label || "Animated diagram" }, container);
-    if (keptCaption) container.appendChild(keptCaption);
+    const scroll = document.createElement("div"); scroll.className = "flow-scroll"; container.appendChild(scroll);
+    const svg = el("svg", { viewBox: `0 0 ${spec.w} ${spec.h}`, class: "flow", role: "img", "aria-label": spec.label || "Animated diagram" }, scroll);
+    svg.style.minWidth = (spec.minWidth || 760) + "px";
+    const captionEl = keptCaption || document.createElement("div");
+    captionEl.className = "caption"; captionEl.setAttribute("aria-live", "polite");
+    container.appendChild(captionEl);
     (spec.lanes || []).forEach(([label, x]) => {
-      el("text", { x, y: 14, "text-anchor": "middle", class: "lane" }, svg).textContent = label;
-      el("line", { x1: x, y1: 20, x2: x, y2: spec.h - 8, class: "lane-line" }, svg);
+      el("text", { x, y: 16, "text-anchor": "middle", class: "lane" }, svg).textContent = label;
+      el("line", { x1: x, y1: 26, x2: x, y2: spec.h - 6, class: "lane-line" }, svg);
     });
     const gE = el("g", {}, svg), gN = el("g", {}, svg), gP = el("g", {}, svg);
-    const edges = {};
-    spec.edges.forEach(e => { edges[e.id] = el("path", { d: pathFor(e), class: "edge" + (e.dashed ? " dashed" : ""), "data-id": e.id }, gE); });
+    // Nodes first, so each box can grow to fit its own text before the edges are routed.
     const nodes = {};
     spec.nodes.forEach(n => {
-      const d = dim(n);
       const g = el("g", { class: "node kind-" + (n.kind || "default"), "data-id": n.id }, gN);
-      el("rect", { x: n.x - d.w / 2, y: n.y - d.h / 2, width: d.w, height: d.h, rx: 10 }, g);
+      const rect = el("rect", { rx: 12 }, g);
       const hasSub = !!n.sub;
-      el("text", { x: n.x, y: n.y + (hasSub ? -2 : 4), "text-anchor": "middle" }, g).textContent = n.label;
-      if (hasSub) el("text", { x: n.x, y: n.y + 13, "text-anchor": "middle", class: "sub" }, g).textContent = n.sub;
+      const t = el("text", { x: n.x, y: n.y + (hasSub ? -3 : 5), "text-anchor": "middle" }, g); t.textContent = n.label;
+      let ts = null;
+      if (hasSub) { ts = el("text", { x: n.x, y: n.y + 16, "text-anchor": "middle", class: "sub" }, g); ts.textContent = n.sub; }
+      let need = 0;
+      try { need = Math.max(t.getComputedTextLength(), ts ? ts.getComputedTextLength() : 0); } catch (e) { need = 0; }
+      if (!need) need = Math.max(n.label.length * 8.6, (n.sub || "").length * 6.8);
+      const w = Math.max(n.w || NW, Math.ceil(need + PAD)), h = n.h || NH;
+      size[n.id] = { w, h };
+      rect.setAttribute("x", n.x - w / 2); rect.setAttribute("y", n.y - h / 2);
+      rect.setAttribute("width", w); rect.setAttribute("height", h);
       nodes[n.id] = g;
     });
-    const captionEl = keptCaption || (container.parentElement && container.parentElement.querySelector(".caption"));
+    const edges = {};
+    spec.edges.forEach(e => { edges[e.id] = el("path", { d: pathFor(e), class: "edge" + (e.dashed ? " dashed" : ""), "data-id": e.id }, gE); });
     function setClass(node, cls, keep) {
       node.setAttribute("class", node.getAttribute("class").split(" ").filter(c => keep.includes(c) || c.startsWith("kind-") || c === "node" || c === "edge" || c === "dashed").join(" ") + (cls ? " " + cls : ""));
     }
@@ -111,19 +124,19 @@
       svg,
       setNode(id, cls) { const n = nodes[id]; if (n) setClass(n, cls, []); },
       setEdge(id, cls) { const e = edges[id]; if (e) setClass(e, cls, []); },
-      caption(text) { if (captionEl) captionEl.textContent = text; },
+      caption(text) { captionEl.textContent = text; },
       reset() { Object.values(nodes).forEach(n => setClass(n, null, [])); Object.values(edges).forEach(e => setClass(e, null, [])); gP.innerHTML = ""; },
       packet(edgeId, opts = {}) {
         const path = edges[edgeId]; if (!path) return Promise.resolve();
-        const ms = REDUCED ? 30 : (opts.ms || 900);
+        const ms = REDUCED ? 30 : (opts.ms || 1200);
         const color = COLORS[opts.cls || ""] || COLORS[""];
         const g = el("g", { class: "packet", style: `color:${color}` }, gP);
-        el("circle", { r: 6, fill: color }, g);
-        let lw = 0;
+        el("circle", { r: 7, fill: color }, g);
         if (opts.label) {
-          const t = el("text", { x: 0, y: -12, "text-anchor": "middle", class: "plabel" }, g); t.textContent = opts.label;
-          lw = opts.label.length * 5.6 + 10;
-          const bg = el("rect", { x: -lw / 2, y: -21, width: lw, height: 13, class: "plabel-bg", fill: color }, g);
+          const t = el("text", { x: 0, y: -16, "text-anchor": "middle", class: "plabel" }, g); t.textContent = opts.label;
+          let lw = 0; try { lw = t.getComputedTextLength(); } catch (e) { lw = 0; }
+          if (!lw) lw = opts.label.length * 6.8;
+          const bg = el("rect", { x: -(lw + 16) / 2, y: -30, width: lw + 16, height: 20, rx: 10, class: "plabel-bg", fill: color }, g);
           g.insertBefore(bg, t);
         }
         const len = path.getTotalLength();
@@ -162,7 +175,7 @@
         else for (const p of s.packets) await flow.packet(p.edge, p);
       }
       if (s.after) for (const id in s.after) flow.setNode(id, s.after[id]);
-      await sleep(s.hold == null ? 900 : s.hold);
+      await sleep(s.hold == null ? 3200 : s.hold + 1600);
     }
     async function play(from) {
       const my = ++token; playing = true; i = from == null ? i : from;
@@ -171,7 +184,7 @@
         await runStep(i);
         if (my !== token) return;
         i++;
-        if (i >= steps.length) { if (loop) { await sleep(1400); i = 0; } else { playing = false; break; } }
+        if (i >= steps.length) { if (loop) { await sleep(3500); i = 0; } else { playing = false; break; } }
       }
     }
     function goto(n) { token++; playing = false; i = n; flow.reset(); for (let k = 0; k < n; k++) { const s = steps[k]; if (s.nodes) for (const id in s.nodes) flow.setNode(id, s.nodes[id]); if (s.edges) for (const id in s.edges) flow.setEdge(id, s.edges[id]); if (s.after) for (const id in s.after) flow.setNode(id, s.after[id]); } runStep(n); }
